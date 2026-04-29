@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VSG Inventory System</title>
+  <title>SIMBA – Sistem Inventaris Tempat Ibadah</title>
 
   <!-- Firebase SDK v9 compat -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -18,9 +18,9 @@
 
   <style>
     :root {
-      --primary: #9C7302;
-      --primary-l: #D4AF42;
-      --primary-ll: #E8D8A9;
+      --primary: #1B4332;
+      --primary-l: #2D6A4F;
+      --primary-ll: #40916C;
       --accent: #C9A227;
       --accent-l: #E8C547;
       --bg: #F5F0E8;
@@ -29,7 +29,7 @@
       --muted: #6B7280;
       --border: #E2DDD4;
       --danger: #DC2626;
-      --success: #D4AF42;
+      --success: #16A34A;
       --warn: #D97706;
       --info: #2563EB;
     }
@@ -95,7 +95,7 @@
 
     /* ── BADGES ── */
     .bdg { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-    .bdg-g  { background: #9C7302; color: #15803D; }
+    .bdg-g  { background: #DCFCE7; color: #15803D; }
     .bdg-r  { background: #FEE2E2; color: #DC2626; }
     .bdg-y  { background: #FEF3C7; color: #B45309; }
     .bdg-b  { background: #DBEAFE; color: #1D4ED8; }
@@ -176,12 +176,12 @@
 //  Lihat README.md untuk cara mendapatkan config Firebase
 // ═══════════════════════════════════════════════════════════════
 const FB_CONFIG = {
-  apiKey: "AIzaSyDiKUhFGh5lFB2xWIk_6eHG2OkLsZmFI2E",
-  authDomain: "inventoryvsg.firebaseapp.com",
-  projectId: "inventoryvsg",
-  storageBucket: "inventoryvsg.firebasestorage.app",
-  messagingSenderId: "73507994905",
-  appId: "1:73507994905:web:29d1c961a377bd70035988"
+  apiKey:            "GANTI_API_KEY",
+  authDomain:        "GANTI_PROJECT_ID.firebaseapp.com",
+  projectId:         "GANTI_PROJECT_ID",
+  storageBucket:     "GANTI_PROJECT_ID.appspot.com",
+  messagingSenderId: "GANTI_SENDER_ID",
+  appId:             "GANTI_APP_ID"
 };
 
 firebase.initializeApp(FB_CONFIG);
@@ -193,11 +193,21 @@ const FS   = firebase.firestore;
 //  APP STATE
 // ═══════════════════════════════════════════════════════════════
 const S = {
-  user   : null,   // {uid, nama, email, role}
+  user   : null,
   page   : 'loading',
-  item   : null,   // item sedang diedit
-  udata  : null,   // user sedang diedit
+  item   : null,
+  udata  : null,
   lapTab : 0,
+  theme  : {
+    appTitle    : 'SIMBA',
+    appSubtitle : 'SISTEM INVENTARIS IBADAH',
+    logoType    : 'emoji',
+    logoEmoji   : '🕌',
+    logoBase64  : '',
+    colorPrimary: '#1B4332',
+    colorAccent : '#C9A227',
+    colorBg     : '#F5F0E8',
+  }
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -349,6 +359,51 @@ async function dbHistory() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  DB – SETTINGS (TEMA TAMPILAN)
+// ═══════════════════════════════════════════════════════════════
+async function dbLoadSettings() {
+  try {
+    const d = await db.collection('settings').doc('theme').get();
+    if (d.exists) {
+      Object.assign(S.theme, d.data());
+    }
+    applyTheme();
+  } catch(e) { applyTheme(); }
+}
+async function dbSaveSettings(data) {
+  await db.collection('settings').doc('theme').set(data, {merge:true});
+  Object.assign(S.theme, data);
+  applyTheme();
+}
+
+function applyTheme() {
+  const t = S.theme;
+  const root = document.documentElement;
+  function hexToRgb(h){const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);return `${r},${g},${b}`;}
+  function lighten(h,a){const r=Math.min(255,parseInt(h.slice(1,3),16)+a),g=Math.min(255,parseInt(h.slice(3,5),16)+a),b=Math.min(255,parseInt(h.slice(5,7),16)+a);return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;}
+  root.style.setProperty('--primary',  t.colorPrimary);
+  root.style.setProperty('--primary-l', lighten(t.colorPrimary, 30));
+  root.style.setProperty('--primary-ll',lighten(t.colorPrimary, 60));
+  root.style.setProperty('--accent',   t.colorAccent);
+  root.style.setProperty('--accent-l', lighten(t.colorAccent, 28));
+  root.style.setProperty('--bg',       t.colorBg);
+  document.title = t.appTitle + ' – Inventaris';
+  // Update login-wrap gradient jika ada
+  document.querySelectorAll('.login-wrap').forEach(el=>{
+    el.style.background = `linear-gradient(150deg, ${darken(t.colorPrimary,20)} 0%, ${t.colorPrimary} 45%, ${lighten(t.colorPrimary,25)} 100%)`;
+  });
+}
+function darken(h,a){const r=Math.max(0,parseInt(h.slice(1,3),16)-a),g=Math.max(0,parseInt(h.slice(3,5),16)-a),b=Math.max(0,parseInt(h.slice(5,7),16)-a);return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;}
+
+function logoHtml(size='40px', forDark=false) {
+  const t = S.theme;
+  if (t.logoType === 'image' && t.logoBase64) {
+    return `<img src="${t.logoBase64}" style="width:${size};height:${size};object-fit:contain;border-radius:8px">`;
+  }
+  return `<span style="font-size:${size}">${t.logoEmoji||'🕌'}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  DB – SETUP
 // ═══════════════════════════════════════════════════════════════
 async function needsSetup() {
@@ -442,9 +497,9 @@ function tplSidebar() {
   return `
   <div class="sidebar" id="sidebar">
     <div style="padding:22px 16px 12px;text-align:center;">
-      <div style="font-size:36px">🏛️</div>
-      <div class="ff" style="color:var(--accent);font-size:26px;font-weight:700;line-height:1">VIHARA SANTI GRAHA</div>
-      <div style="color:rgba(255,255,255,.4);font-size:9.5px;letter-spacing:1.5px;margin-top:2px">INVENTARY SYSTEM</div>
+      ${logoHtml('36px', true)}
+      <div class="ff" style="color:var(--accent);font-size:26px;font-weight:700;line-height:1;margin-top:4px">${S.theme.appTitle}</div>
+      <div style="color:rgba(255,255,255,.4);font-size:9px;letter-spacing:1.5px;margin-top:2px">${S.theme.appSubtitle}</div>
       <div style="height:1px;background:rgba(255,255,255,.1);margin:14px 0"></div>
     </div>
     <nav style="flex:1;padding-bottom:16px">
@@ -803,9 +858,101 @@ function tplFormPengguna() {
 
 // ── PENGATURAN ─────────────────────────────────────────────────
 function tplPengaturan() {
+  const t = S.theme;
+  const EMOJIS = ['🕌','🕍','⛪','🛕','🏛️','⭐','☪️','✝️','☸️','🌙','🔯','🙏'];
   return `
-  <div class="ph"><div><h1 class="ff">Pengaturan &amp; Backup</h1><p>Kelola data sistem secara menyeluruh</p></div></div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px">
+  <div class="ph"><div><h1 class="ff">Pengaturan &amp; Backup</h1><p>Kelola tampilan dan data sistem</p></div></div>
+
+  <!-- ══ TAMPILAN APLIKASI ══ -->
+  <div class="card" style="margin-bottom:20px">
+    <h3 style="font-size:15px;font-weight:700;color:var(--primary);margin-bottom:16px;display:flex;align-items:center;gap:8px">🎨 Tampilan Aplikasi</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+
+      <!-- LOGO -->
+      <div style="grid-column:1/-1">
+        <div class="lbl">Logo Aplikasi</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-top:6px">
+          <!-- Preview logo saat ini -->
+          <div style="width:72px;height:72px;border:2px dashed var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;background:#F9F7F2;flex-shrink:0" id="logo-preview">
+            ${logoHtml('42px')}
+          </div>
+          <div>
+            <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Pilih emoji atau upload gambar</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+              ${EMOJIS.map(em => `<button onclick="setLogoEmoji('${em}')" style="width:34px;height:34px;font-size:20px;cursor:pointer;border-radius:8px;border:2px solid ${t.logoEmoji===em&&t.logoType==='emoji'?'var(--accent)':'var(--border)'};background:${t.logoEmoji===em&&t.logoType==='emoji'?'#FEF3C7':'#fff'};transition:all .15s">${em}</button>`).join('')}
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <label class="btn btn-outline" style="cursor:pointer;font-size:12.5px;padding:6px 12px">
+                📁 Upload Gambar
+                <input type="file" accept="image/*" style="display:none" onchange="uploadLogoImage(this)">
+              </label>
+              ${t.logoType==='image'?`<button class="btn btn-ghost" style="font-size:12.5px;padding:6px 12px" onclick="resetLogoEmoji()">Kembali ke Emoji</button>`:''}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- JUDUL -->
+      <div class="fgrp">
+        <label class="lbl">Nama / Judul Aplikasi</label>
+        <input class="inp" id="th-title" value="${t.appTitle}" placeholder="Contoh: SIMBA">
+      </div>
+      <div class="fgrp">
+        <label class="lbl">Sub-judul (Tagline)</label>
+        <input class="inp" id="th-sub" value="${t.appSubtitle}" placeholder="Contoh: SISTEM INVENTARIS IBADAH">
+      </div>
+
+      <!-- WARNA -->
+      <div class="fgrp">
+        <label class="lbl">Warna Utama (Sidebar)</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="color" id="th-primary" value="${t.colorPrimary}" style="width:42px;height:36px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;padding:2px" oninput="previewColor()">
+          <input class="inp" id="th-primary-hex" value="${t.colorPrimary}" style="width:100px;font-family:monospace" oninput="document.getElementById('th-primary').value=this.value;previewColor()">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${['#1B4332','#1E3A5F','#3D1C52','#7B1A1A','#1A3A1A','#1A2E4A','#2C2C2C','#5B3A00'].map(c=>`<button onclick="setColor('primary','${c}')" style="width:22px;height:22px;background:${c};border-radius:5px;border:2px solid ${t.colorPrimary===c?'#fff':'transparent'};cursor:pointer;box-shadow:0 0 0 1px ${c}"></button>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="fgrp">
+        <label class="lbl">Warna Aksen (Tombol / Highlight)</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="color" id="th-accent" value="${t.colorAccent}" style="width:42px;height:36px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;padding:2px" oninput="previewColor()">
+          <input class="inp" id="th-accent-hex" value="${t.colorAccent}" style="width:100px;font-family:monospace" oninput="document.getElementById('th-accent').value=this.value;previewColor()">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${['#C9A227','#E8C547','#3B82F6','#10B981','#EF4444','#F97316','#EC4899','#8B5CF6'].map(c=>`<button onclick="setColor('accent','${c}')" style="width:22px;height:22px;background:${c};border-radius:5px;border:2px solid ${t.colorAccent===c?'#fff':'transparent'};cursor:pointer;box-shadow:0 0 0 1px ${c}"></button>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="fgrp">
+        <label class="lbl">Warna Latar Halaman</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="color" id="th-bg" value="${t.colorBg}" style="width:42px;height:36px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;padding:2px" oninput="previewColor()">
+          <input class="inp" id="th-bg-hex" value="${t.colorBg}" style="width:100px;font-family:monospace" oninput="document.getElementById('th-bg').value=this.value;previewColor()">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${['#F5F0E8','#F0F4F8','#F5F5F5','#FDF6EC','#F0F9F4','#F9F0FF','#FFF5F5','#FFFFFF'].map(c=>`<button onclick="setColor('bg','${c}')" style="width:22px;height:22px;background:${c};border-radius:5px;border:2px solid ${t.colorBg===c?'var(--border)':'transparent'};cursor:pointer;box-shadow:0 0 0 1px #ccc"></button>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- PREVIEW -->
+      <div style="grid-column:1/-1">
+        <div class="lbl" style="margin-bottom:8px">Preview Tema</div>
+        <div id="theme-preview" style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap">
+          ${tplThemePreview()}
+        </div>
+      </div>
+
+    </div>
+    <div style="display:flex;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+      <button class="btn btn-accent" onclick="saveTema()">💾 Simpan Tema</button>
+      <button class="btn btn-outline" onclick="resetTema()">↺ Reset Default</button>
+    </div>
+  </div>
+
+  <!-- ══ BACKUP & RESTORE ══ -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px">
     <div class="card">
       <div style="font-size:36px;margin-bottom:10px">💾</div>
       <h3 style="font-size:15px;font-weight:600;color:var(--primary);margin-bottom:8px">Backup Data</h3>
@@ -815,7 +962,7 @@ function tplPengaturan() {
     <div class="card">
       <div style="font-size:36px;margin-bottom:10px">🔄</div>
       <h3 style="font-size:15px;font-weight:600;color:var(--primary);margin-bottom:8px">Restore Data</h3>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Pulihkan data dari file backup JSON. Data barang yang ada akan ditimpa.</p>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Pulihkan data dari file backup JSON.</p>
       <label class="btn btn-outline" style="cursor:pointer;display:inline-block">
         📂 Pilih File Backup
         <input type="file" accept=".json" style="display:none" onchange="handleRestore(this)">
@@ -842,34 +989,56 @@ service cloud.firestore {
     function isActive()     { return isAuth() && getU().active != false; }
 
     match /users/{uid} {
-      allow read:   if isActive();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow list: if true;
+      allow get:  if isAuth();
+      allow create, update: if isAdmin() || (!isAuth() && !exists(/databases/$(database)/documents/users/$(uid)));
       allow delete: if isAdmin();
     }
     match /items/{id} {
-      allow read:             if isActive();
-      allow create, update:   if isActive();
-      allow delete:           if isActive();
+      allow read, write: if isActive();
     }
     match /history/{id} {
-      allow read:   if isActive();
-      allow create: if isActive();
+      allow read, create: if isActive();
       allow delete: if isSuperAdmin();
+    }
+    match /settings/{doc} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
     }
   }
 }</pre>
   </div>`;
 }
 
+// ── THEME PREVIEW ──────────────────────────────────────────────
+function tplThemePreview() {
+  const t = S.theme;
+  return `
+  <div style="background:${t.colorPrimary};border-radius:10px;padding:12px 14px;min-width:140px;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:20px">${t.logoType==='image'&&t.logoBase64?'🖼️':t.logoEmoji}</span>
+      <span style="font-family:'Amiri',serif;color:${t.colorAccent};font-size:16px;font-weight:700">${t.appTitle}</span>
+    </div>
+    ${['Dashboard','Data Barang','Pencarian'].map((n,i)=>`<div style="padding:5px 8px;border-radius:6px;font-size:11px;font-weight:500;color:${i===0?t.colorPrimary:'rgba(255,255,255,.65)'};background:${i===0?t.colorAccent:'transparent'};margin-bottom:3px">${n}</div>`).join('')}
+  </div>
+  <div style="flex:1;min-width:200px">
+    <div style="background:${t.colorBg};border-radius:10px;padding:12px;min-height:100px">
+      <div style="font-size:11.5px;font-weight:700;color:${t.colorPrimary};margin-bottom:8px">Contoh Halaman</div>
+      <button style="background:${t.colorAccent};color:${t.colorPrimary};border:none;border-radius:7px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:default">+ Tambah</button>
+      <span style="margin-left:8px;background:${t.colorPrimary};color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:11.5px;cursor:default">Simpan</span>
+    </div>
+  </div>`;
+}
+
 // ── LOGIN ──────────────────────────────────────────────────────
 function tplLogin() {
+  const lg = `linear-gradient(150deg,${darken(S.theme.colorPrimary,20)} 0%,${S.theme.colorPrimary} 45%,${lighten(S.theme.colorPrimary,25)} 100%)`;
   return `
-  <div class="login-wrap">
+  <div class="login-wrap" style="background:${lg}">
     <div style="text-align:center;width:100%;max-width:400px;padding:20px">
-      <div style="font-size:56px;margin-bottom:6px">📂</div>
-      <div class="ff" style="color:var(--accent);font-size:32px;font-weight:700;line-height:1">VIHARA SANTI GRAHA</div>
-      <div style="color:rgba(255,255,255,.45);font-size:10.5px;letter-spacing:2px;margin-bottom:28px">INVENTARY SYSTEM</div>
+      <div style="margin-bottom:6px">${logoHtml('56px',true)}</div>
+      <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
+      <div style="color:rgba(255,255,255,.45);font-size:10.5px;letter-spacing:2px;margin-bottom:30px">${S.theme.appSubtitle}</div>
       <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:30px">
         <form id="frm-login" onsubmit="handleLogin(event)">
           <div class="fgrp" style="text-align:left">
@@ -880,11 +1049,11 @@ function tplLogin() {
             <label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Password</label>
             <input class="inp" type="password" id="l-pw" placeholder="••••••••" required>
           </div>
-          <button type="submit" class="btn btn-accent" id="l-btn" style="width:100%;padding:11px;font-size:14.5px;margin-top:6px">Masuk ke VIHARA SANTI GRAHA INVENTARY SYSTEM</button>
+          <button type="submit" class="btn btn-accent" id="l-btn" style="width:100%;padding:11px;font-size:14.5px;margin-top:6px">Masuk ke ${S.theme.appTitle}</button>
           <div id="l-err" style="color:#fca5a5;font-size:13px;margin-top:10px;display:none"></div>
         </form>
       </div>
-      <div style="color:rgba(255,255,255,.25);font-size:11px;margin-top:16px">VSG INV.SYS v1.0 © ${new Date().getFullYear()}</div>
+      <div style="color:rgba(255,255,255,.25);font-size:11px;margin-top:16px">${S.theme.appTitle} v1.0 © ${new Date().getFullYear()}</div>
     </div>
   </div>`;
 }
@@ -894,11 +1063,11 @@ function tplSetup() {
   return `
   <div class="login-wrap">
     <div style="width:100%;max-width:400px;padding:20px;text-align:center">
-      <div style="font-size:56px;margin-bottom:6px">📂</div>
-      <div class="ff" style="color:var(--accent);font-size:30px;font-weight:700;line-height:1">VIHARA SANTI GRAHA INVENTARY SYSTEM</div>
+      <div style="margin-bottom:6px">${logoHtml('56px',true)}</div>
+      <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
       <div style="color:rgba(255,255,255,.65);font-size:13.5px;margin:8px 0 24px">Setup Awal – Buat Akun Super Admin</div>
       <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:28px;text-align:left">
-        <p style="color:rgba(255,255,255,.6);font-size:13px;margin-bottom:18px">Belum ada pengguna di sistem. Buat akun Super Admin untuk memulai Inventory System.</p>
+        <p style="color:rgba(255,255,255,.6);font-size:13px;margin-bottom:18px">Belum ada pengguna di sistem. Buat akun Super Admin untuk memulai SIMBA.</p>
         <form id="frm-setup" onsubmit="handleSetup(event)">
           <div class="fgrp"><label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Nama Lengkap</label>
             <input class="inp" id="su-nama" required placeholder="Nama admin">
@@ -953,7 +1122,7 @@ async function handleLogin(e) {
     };
     err.textContent = m[ex.code] || ex.message;
     err.style.display = 'block';
-    btn.innerHTML = 'Masuk ke SIMBA'; btn.disabled = false;
+    btn.innerHTML = 'Masuk ke ' + S.theme.appTitle; btn.disabled = false;
   }
 }
 
@@ -1425,9 +1594,149 @@ function confirmReset() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  TEMA – FUNGSI INTERAKTIF
+// ═══════════════════════════════════════════════════════════════
+
+// ── Color helpers ────────────────────────────────────────────
+function setColor(type, hex) {
+  if (type === 'primary') {
+    const el = document.getElementById('th-primary');
+    const hx = document.getElementById('th-primary-hex');
+    if (el) el.value = hex;
+    if (hx) hx.value = hex;
+  } else if (type === 'accent') {
+    const el = document.getElementById('th-accent');
+    const hx = document.getElementById('th-accent-hex');
+    if (el) el.value = hex;
+    if (hx) hx.value = hex;
+  } else if (type === 'bg') {
+    const el = document.getElementById('th-bg');
+    const hx = document.getElementById('th-bg-hex');
+    if (el) el.value = hex;
+    if (hx) hx.value = hex;
+  }
+  previewColor();
+}
+
+function previewColor() {
+  const p  = document.getElementById('th-primary')?.value || S.theme.colorPrimary;
+  const a  = document.getElementById('th-accent')?.value  || S.theme.colorAccent;
+  const bg = document.getElementById('th-bg')?.value      || S.theme.colorBg;
+  const ttl = document.getElementById('th-title')?.value  || S.theme.appTitle;
+  const sub = document.getElementById('th-sub')?.value    || S.theme.appSubtitle;
+
+  // Sync hex inputs
+  const phx=document.getElementById('th-primary-hex'); if(phx&&document.activeElement!==phx) phx.value=p;
+  const ahx=document.getElementById('th-accent-hex');  if(ahx&&document.activeElement!==ahx) ahx.value=a;
+  const bhx=document.getElementById('th-bg-hex');      if(bhx&&document.activeElement!==bhx) bhx.value=bg;
+
+  // Update CSS live
+  document.documentElement.style.setProperty('--primary', p);
+  document.documentElement.style.setProperty('--primary-l', lighten(p,30));
+  document.documentElement.style.setProperty('--primary-ll', lighten(p,60));
+  document.documentElement.style.setProperty('--accent', a);
+  document.documentElement.style.setProperty('--accent-l', lighten(a,28));
+  document.documentElement.style.setProperty('--bg', bg);
+
+  // Update preview panel
+  const prev = document.getElementById('theme-preview');
+  if (prev) {
+    const tempTheme = { ...S.theme, colorPrimary:p, colorAccent:a, colorBg:bg, appTitle:ttl, appSubtitle:sub };
+    const orig = S.theme;
+    S.theme = tempTheme;
+    prev.innerHTML = tplThemePreview();
+    S.theme = orig;
+  }
+}
+
+// ── Logo helpers ─────────────────────────────────────────────
+function setLogoEmoji(em) {
+  S.theme.logoType  = 'emoji';
+  S.theme.logoEmoji = em;
+  // Refresh preview & emoji buttons
+  const prev = document.getElementById('logo-preview');
+  if (prev) prev.innerHTML = logoHtml('42px');
+  // Re-render pengaturan page to update selected state
+  go('pengaturan');
+}
+
+function resetLogoEmoji() {
+  S.theme.logoType   = 'emoji';
+  S.theme.logoBase64 = '';
+  go('pengaturan');
+}
+
+function uploadLogoImage(input) {
+  if (!input.files[0]) return;
+  const file = input.files[0];
+  if (file.size > 500 * 1024) { toast('Ukuran gambar max 500KB', 'err'); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    S.theme.logoType   = 'image';
+    S.theme.logoBase64 = e.target.result;
+    const prev = document.getElementById('logo-preview');
+    if (prev) prev.innerHTML = logoHtml('42px');
+    go('pengaturan');
+    toast('Logo diupload, klik Simpan Tema untuk menyimpan');
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Save / Reset ─────────────────────────────────────────────
+async function saveTema() {
+  const newTheme = {
+    appTitle    : document.getElementById('th-title')?.value.trim()   || S.theme.appTitle,
+    appSubtitle : document.getElementById('th-sub')?.value.trim()     || S.theme.appSubtitle,
+    colorPrimary: document.getElementById('th-primary')?.value        || S.theme.colorPrimary,
+    colorAccent : document.getElementById('th-accent')?.value         || S.theme.colorAccent,
+    colorBg     : document.getElementById('th-bg')?.value             || S.theme.colorBg,
+    logoType    : S.theme.logoType,
+    logoEmoji   : S.theme.logoEmoji,
+    logoBase64  : S.theme.logoBase64,
+  };
+  try {
+    await dbSaveSettings(newTheme);
+    toast('✓ Tema berhasil disimpan!');
+    render(); // Re-render semua termasuk sidebar
+  } catch(e) { toast('Gagal simpan: ' + e.message, 'err'); }
+}
+
+async function resetTema() {
+  if (!confirm('Reset tema ke tampilan default?')) return;
+  const def = {
+    appTitle    : 'SIMBA',
+    appSubtitle : 'SISTEM INVENTARIS IBADAH',
+    logoType    : 'emoji',
+    logoEmoji   : '🕌',
+    logoBase64  : '',
+    colorPrimary: '#1B4332',
+    colorAccent : '#C9A227',
+    colorBg     : '#F5F0E8',
+  };
+  try {
+    await dbSaveSettings(def);
+    toast('Tema direset ke default');
+    render();
+  } catch(e) { toast('Gagal reset: ' + e.message, 'err'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  AUTH STATE LISTENER – INIT
 // ═══════════════════════════════════════════════════════════════
+async function safeNeedsSetup() {
+  try {
+    return await needsSetup();
+  } catch(e) {
+    // Jika rules memblok, asumsikan sudah ada user → tampilkan login
+    console.warn('Setup check blocked by rules, showing login:', e.message);
+    return false;
+  }
+}
+
 auth.onAuthStateChanged(async (fbUser) => {
+  // Muat tema terlebih dahulu (bisa diakses publik)
+  await dbLoadSettings();
+
   if (fbUser) {
     try {
       const doc = await db.collection('users').doc(fbUser.uid).get();
@@ -1436,12 +1745,16 @@ auth.onAuthStateChanged(async (fbUser) => {
         go('dashboard');
       } else {
         await auth.signOut();
-        S.page = (await needsSetup()) ? 'setup' : 'login';
+        S.page = (await safeNeedsSetup()) ? 'setup' : 'login';
         render();
       }
-    } catch(e) { S.page='login'; render(); }
+    } catch(e) {
+      console.error('Auth error:', e.message);
+      S.page = 'login';
+      render();
+    }
   } else {
-    S.page = (await needsSetup()) ? 'setup' : 'login';
+    S.page = (await safeNeedsSetup()) ? 'setup' : 'login';
     render();
   }
 });
