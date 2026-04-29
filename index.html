@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIMBA – Sistem Inventaris Tempat Ibadah</title>
+
+  <!-- Firebase SDK v9 compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary: #1B4332;
+      --primary-l: #2D6A4F;
+      --primary-ll: #40916C;
+      --accent: #C9A227;
+      --accent-l: #E8C547;
+      --bg: #F5F0E8;
+      --surface: #FFFFFF;
+      --text: #1A1A1A;
+      --muted: #6B7280;
+      --border: #E2DDD4;
+      --danger: #DC2626;
+      --success: #16A34A;
+      --warn: #D97706;
+      --info: #2563EB;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .ff { font-family: 'Amiri', serif; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      background: var(--primary);
+      width: 256px; min-height: 100vh;
+      position: fixed; left: 0; top: 0;
+      transition: transform .3s ease; z-index: 50;
+      overflow-y: auto; overflow-x: hidden;
+      display: flex; flex-direction: column;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; border-radius: 8px; cursor: pointer;
+      color: rgba(255,255,255,.72); transition: all .18s;
+      margin: 2px 10px; font-size: 13.5px; font-weight: 500;
+      white-space: nowrap;
+    }
+    .nav-item:hover { background: rgba(255,255,255,.1); color: #fff; }
+    .nav-item.active { background: var(--accent); color: var(--primary); font-weight: 700; }
+    .nav-icon { font-size: 15px; flex-shrink: 0; }
+
+    /* ── MAIN ── */
+    .main { margin-left: 256px; min-height: 100vh; padding: 28px 28px 60px; }
+
+    /* ── CARD ── */
+    .card { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+
+    /* ── BUTTONS ── */
+    .btn { padding: 8px 16px; border-radius: 8px; font-size: 13.5px; font-weight: 500; cursor: pointer; border: none; transition: all .18s; font-family: inherit; }
+    .btn-primary  { background: var(--primary); color: #fff; }
+    .btn-primary:hover  { background: var(--primary-l); }
+    .btn-accent   { background: var(--accent); color: var(--primary); font-weight: 700; }
+    .btn-accent:hover   { background: var(--accent-l); }
+    .btn-danger   { background: var(--danger); color: #fff; }
+    .btn-danger:hover   { filter: brightness(1.1); }
+    .btn-outline  { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
+    .btn-outline:hover  { background: var(--primary); color: #fff; }
+    .btn-ghost    { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover    { background: #f5f5f5; }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    /* ── FORM ── */
+    .lbl { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+    .inp { width: 100%; padding: 9px 11px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13.5px; font-family: inherit; color: var(--text); background: #fff; outline: none; transition: border-color .18s; }
+    .inp:focus { border-color: var(--primary-ll); }
+    select.inp { cursor: pointer; }
+    .fgrp { margin-bottom: 14px; }
+
+    /* ── TABLE ── */
+    .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tbl th { background: var(--primary); color: #fff; padding: 10px 12px; text-align: left; font-weight: 600; font-size: 12px; letter-spacing: .4px; }
+    .tbl th:first-child { border-radius: 8px 0 0 0; }
+    .tbl th:last-child  { border-radius: 0 8px 0 0; }
+    .tbl td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .tbl tr:hover td { background: #F0F9F4; }
+    .tbl tr:last-child td { border-bottom: none; }
+
+    /* ── BADGES ── */
+    .bdg { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .bdg-g  { background: #DCFCE7; color: #15803D; }
+    .bdg-r  { background: #FEE2E2; color: #DC2626; }
+    .bdg-y  { background: #FEF3C7; color: #B45309; }
+    .bdg-b  { background: #DBEAFE; color: #1D4ED8; }
+    .bdg-n  { background: #F3F4F6; color: #4B5563; }
+    .bdg-p  { background: #F3E8FF; color: #7E22CE; }
+
+    /* ── TOAST ── */
+    #toasts { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 16px; border-radius: 10px; font-size: 13.5px; font-weight: 500; min-width: 270px; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 18px rgba(0,0,0,.18); animation: tin .3s ease; }
+    .t-ok  { background: #15803D; color: #fff; }
+    .t-err { background: #DC2626; color: #fff; }
+    .t-inf { background: #1D4ED8; color: #fff; }
+    @keyframes tin { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+
+    /* ── MODAL ── */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .modal-box { background: #fff; border-radius: 16px; padding: 24px; width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; }
+
+    /* ── STAT CARD ── */
+    .sc { background: var(--surface); border-radius: 12px; padding: 18px 20px; border: 1px solid var(--border); position: relative; overflow: hidden; }
+    .sc::after { content:''; position:absolute; top:0; left:0; width:4px; height:100%; background:var(--accent); }
+
+    /* ── LOGIN ── */
+    .login-wrap { min-height: 100vh; background: linear-gradient(150deg, #0A2818 0%, #1B4332 45%, #2D6A4F 100%); display: flex; align-items: center; justify-content: center; padding: 20px; }
+
+    /* ── SPINNER ── */
+    .spin { border: 3px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; width: 20px; height: 20px; animation: rot .7s linear infinite; display: inline-block; flex-shrink: 0; }
+    .spin-dk { border-color: rgba(27,67,50,.2); border-top-color: #1B4332; }
+    @keyframes rot { to { transform: rotate(360deg); } }
+
+    /* ── PAGE HEADER ── */
+    .ph { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; flex-wrap: wrap; gap: 10px; }
+    .ph h1 { font-size: 26px; color: var(--primary); line-height: 1.2; }
+    .ph p { font-size: 13px; color: var(--muted); margin-top: 3px; }
+
+    /* ── MOBILE ── */
+    @media(max-width:768px) {
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; padding: 16px; }
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── TABS ── */
+    .tabs { display: flex; gap: 3px; background: #EDEAE3; border-radius: 10px; padding: 4px; width: fit-content; margin-bottom: 16px; flex-wrap: wrap; }
+    .tab-btn { padding: 7px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; font-family: inherit; transition: all .18s; background: transparent; color: var(--muted); }
+    .tab-btn.active { background: #fff; color: var(--primary); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+
+    /* radio/checkbox group */
+    .radio-group { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
+    .radio-item { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13.5px; }
+
+    /* action btns in table */
+    .act-btn { padding: 4px 11px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; border: 1px solid; transition: all .15s; }
+    .act-edit { background: #EFF6FF; color: #1D4ED8; border-color: #BFDBFE; }
+    .act-edit:hover { background: #DBEAFE; }
+    .act-del  { background: #FEF2F2; color: #DC2626; border-color: #FECACA; }
+    .act-del:hover  { background: #FEE2E2; }
+
+    @media print {
+      .sidebar, .ph button, .tabs, #filter-bar, .act-btn { display: none !important; }
+      .main { margin-left: 0 !important; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
+    <div class="spin spin-dk" style="width:40px;height:40px;border-width:4px;"></div>
+  </div>
+</div>
+<div id="toasts"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  FIREBASE CONFIGURATION — ganti nilai di bawah ini
+//  Lihat README.md untuk cara mendapatkan config Firebase
+// ═══════════════════════════════════════════════════════════════
+const FB_CONFIG = {
+  apiKey: "AIzaSyDiKUhFGh5lFB2xWIk_6eHG2OkLsZmFI2E",
+  authDomain: "inventoryvsg.firebaseapp.com",
+  projectId: "inventoryvsg",
+  storageBucket: "inventoryvsg.firebasestorage.app",
+  messagingSenderId: "73507994905",
+  appId: "1:73507994905:web:29d1c961a377bd70035988"
+};
+
+firebase.initializeApp(FB_CONFIG);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+const FS   = firebase.firestore;
+
+// ═══════════════════════════════════════════════════════════════
+//  APP STATE
+// ═══════════════════════════════════════════════════════════════
+const S = {
+  user   : null,   // {uid, nama, email, role}
+  page   : 'loading',
+  item   : null,   // item sedang diedit
+  udata  : null,   // user sedang diedit
+  lapTab : 0,
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════════════════
+const fmt = {
+  date(ts) {
+    if (!ts) return '–';
+    let d = ts?.toDate?.() || (ts instanceof Date ? ts : new Date(ts));
+    return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+  },
+  dt(ts) {
+    if (!ts) return '–';
+    let d = ts?.toDate?.() || (ts instanceof Date ? ts : new Date(ts));
+    return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  },
+};
+
+function mkKode() {
+  const y = String(new Date().getFullYear()).slice(-2);
+  const m = String(new Date().getMonth()+1).padStart(2,'0');
+  const r = Math.random().toString(36).substr(2,4).toUpperCase();
+  return `BRG-${y}${m}-${r}`;
+}
+
+function roleLabel(r) {
+  return {superadmin:'Super Admin', admin:'Admin', manager:'Manager Perlengkapan'}[r] || r || '–';
+}
+
+function toast(msg, type='ok') {
+  const c = document.getElementById('toasts');
+  const cls = {ok:'t-ok', err:'t-err', inf:'t-inf'}[type]||'t-inf';
+  const icon= {ok:'✓', err:'✕', inf:'ℹ'}[type]||'ℹ';
+  const el = document.createElement('div');
+  el.className = `toast ${cls}`;
+  el.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+  c.appendChild(el);
+  setTimeout(()=>el.remove(), 3600);
+}
+
+function can(a) {
+  const r = S.user?.role;
+  if (!r) return false;
+  if (r === 'superadmin') return true;
+  if (a === 'items')    return ['admin','manager'].includes(r);
+  if (a === 'users')    return r === 'admin';
+  if (a === 'reports')  return ['admin','manager'].includes(r);
+  if (a === 'backup')   return false;
+  return false;
+}
+
+function go(page, params={}) {
+  S.page  = page;
+  S.item  = params.item  || null;
+  S.udata = params.udata || null;
+  render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AUTH
+// ═══════════════════════════════════════════════════════════════
+async function doLogin(email, pw) {
+  const c = await auth.signInWithEmailAndPassword(email, pw);
+  const ud = await db.collection('users').doc(c.user.uid).get();
+  if (!ud.exists) { await auth.signOut(); throw new Error('Akun tidak ditemukan di sistem'); }
+  if (ud.data().active === false) { await auth.signOut(); throw new Error('Akun nonaktif'); }
+  return ud.data();
+}
+
+async function doLogout() {
+  await auth.signOut(); S.user = null; render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DB – ITEMS
+// ═══════════════════════════════════════════════════════════════
+async function dbItems() {
+  const s = await db.collection('items').orderBy('createdAt','desc').get();
+  return s.docs.map(d=>({id:d.id,...d.data()}));
+}
+async function dbItem(id) {
+  const d = await db.collection('items').doc(id).get();
+  return d.exists?{id:d.id,...d.data()}:null;
+}
+async function dbCreateItem(data) {
+  const now = FS.FieldValue.serverTimestamp();
+  const ref = await db.collection('items').add({
+    ...data,
+    createdAt:now, createdBy:S.user.uid, createdByName:S.user.nama,
+    updatedAt:now, updatedBy:S.user.uid, updatedByName:S.user.nama,
+  });
+  await dbLog(ref.id, data.kode, data.nama, 'tambah', {}, data);
+}
+async function dbUpdateItem(id, old, data) {
+  const now = FS.FieldValue.serverTimestamp();
+  await db.collection('items').doc(id).update({...data,updatedAt:now,updatedBy:S.user.uid,updatedByName:S.user.nama});
+  await dbLog(id, data.kode, data.nama, 'edit', old, data);
+}
+async function dbDeleteItem(id, item) {
+  await db.collection('items').doc(id).delete();
+  await dbLog(id, item.kode, item.nama, 'hapus', item, {});
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DB – USERS
+// ═══════════════════════════════════════════════════════════════
+async function dbUsers() {
+  const s = await db.collection('users').orderBy('createdAt','desc').get();
+  return s.docs.map(d=>({id:d.id,...d.data()}));
+}
+async function dbCreateUser(data) {
+  // Buat secondary app agar tidak logout user yg sedang aktif
+  const sec = firebase.initializeApp(FB_CONFIG, 'sec-'+Date.now());
+  const secAuth = sec.auth();
+  try {
+    const c = await secAuth.createUserWithEmailAndPassword(data.email, data.password);
+    await secAuth.signOut(); await sec.delete();
+    await db.collection('users').doc(c.user.uid).set({
+      uid:c.user.uid, nama:data.nama, email:data.email, role:data.role,
+      createdAt:FS.FieldValue.serverTimestamp(),
+      createdBy:S.user.uid, createdByName:S.user.nama, active:true,
+    });
+    return c.user.uid;
+  } catch(e) { await sec.delete(); throw e; }
+}
+async function dbUpdateUser(uid, data) {
+  await db.collection('users').doc(uid).update({
+    nama:data.nama, role:data.role, active:data.active,
+    updatedAt:FS.FieldValue.serverTimestamp(), updatedBy:S.user.uid,
+  });
+}
+async function dbDeleteUser(uid) {
+  await db.collection('users').doc(uid).delete();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DB – HISTORY
+// ═══════════════════════════════════════════════════════════════
+async function dbLog(itemId, kode, nama, action, old, nw) {
+  await db.collection('history').add({
+    itemId, itemKode:kode, itemNama:nama, action, oldData:old, newData:nw,
+    userId:S.user.uid, userName:S.user.nama, userRole:S.user.role,
+    timestamp:FS.FieldValue.serverTimestamp(),
+  });
+}
+async function dbHistory() {
+  const s = await db.collection('history').orderBy('timestamp','desc').limit(300).get();
+  return s.docs.map(d=>({id:d.id,...d.data()}));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DB – SETUP
+// ═══════════════════════════════════════════════════════════════
+async function needsSetup() {
+  const s = await db.collection('users').limit(1).get();
+  return s.empty;
+}
+async function setupSuperAdmin(nama, email, pw) {
+  const c = await auth.createUserWithEmailAndPassword(email, pw);
+  await db.collection('users').doc(c.user.uid).set({
+    uid:c.user.uid, nama, email, role:'superadmin', active:true,
+    createdAt:FS.FieldValue.serverTimestamp(), createdBy:c.user.uid, createdByName:nama,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BACKUP / RESTORE / RESET
+// ═══════════════════════════════════════════════════════════════
+async function doBackup() {
+  toast('Menyiapkan backup…','inf');
+  try {
+    const [items, users, history] = await Promise.all([
+      db.collection('items').get().then(s=>s.docs.map(d=>({id:d.id,...d.data()}))),
+      db.collection('users').get().then(s=>s.docs.map(d=>({id:d.id,...d.data()}))),
+      db.collection('history').get().then(s=>s.docs.map(d=>({id:d.id,...d.data()}))),
+    ]);
+    const blob = new Blob([JSON.stringify({
+      exportedAt:new Date().toISOString(), exportedBy:S.user.nama, version:'1.0',
+      data:{items, users, history}
+    },null,2)],{type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `backup-simba-${new Date().toISOString().slice(0,10)}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+    toast('Backup berhasil diunduh!');
+  } catch(e){ toast('Gagal backup: '+e.message,'err'); }
+}
+async function doRestore(file) {
+  try {
+    const bk = JSON.parse(await file.text());
+    if (!bk.data) throw new Error('Format backup tidak valid');
+    toast('Memulai restore…','inf');
+    const batch = db.batch();
+    (bk.data.items||[]).forEach(({id,...d})=>batch.set(db.collection('items').doc(id),d));
+    await batch.commit();
+    toast(`Restore selesai – ${bk.data.items?.length||0} barang dipulihkan`);
+    go('dashboard');
+  } catch(e){ toast('Gagal restore: '+e.message,'err'); }
+}
+async function doReset() {
+  toast('Menghapus data…','inf');
+  try {
+    for (const col of ['items','history']) {
+      const s = await db.collection(col).get();
+      const b = db.batch(); s.docs.forEach(d=>b.delete(d.ref)); await b.commit();
+    }
+    toast('Reset berhasil!');
+    go('dashboard');
+  } catch(e){ toast('Gagal reset: '+e.message,'err'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER ENGINE
+// ═══════════════════════════════════════════════════════════════
+function render() {
+  const app = document.getElementById('app');
+  if (S.page === 'login') {
+    app.innerHTML = tplLogin(); bindLogin();
+  } else if (S.page === 'setup') {
+    app.innerHTML = tplSetup(); bindSetup();
+  } else {
+    app.innerHTML = `<div style="display:flex">${tplSidebar()}<div class="main" style="flex:1;min-width:0;">${tplPage()}</div></div>`;
+    bindPage();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SIDEBAR
+// ═══════════════════════════════════════════════════════════════
+function tplSidebar() {
+  const r = S.user?.role, p = S.page;
+  const navs = [
+    {id:'dashboard', ic:'⊞',  lbl:'Dashboard',          roles:['superadmin','admin','manager']},
+    {id:'barang',    ic:'📦', lbl:'Data Barang',         roles:['superadmin','admin','manager']},
+    {id:'cari',      ic:'🔍', lbl:'Pencarian',           roles:['superadmin','admin','manager']},
+    {id:'riwayat',   ic:'📋', lbl:'Riwayat Aktivitas',   roles:['superadmin','admin','manager']},
+    {id:'laporan',   ic:'📊', lbl:'Laporan',             roles:['superadmin','admin']},
+    {id:'pengguna',  ic:'👥', lbl:'Manajemen Pengguna',  roles:['superadmin','admin']},
+    {id:'pengaturan',ic:'⚙️', lbl:'Pengaturan & Backup', roles:['superadmin']},
+  ].filter(n=>n.roles.includes(r));
+
+  return `
+  <div class="sidebar" id="sidebar">
+    <div style="padding:22px 16px 12px;text-align:center;">
+      <div style="font-size:36px">🕌</div>
+      <div class="ff" style="color:var(--accent);font-size:26px;font-weight:700;line-height:1">SIMBA</div>
+      <div style="color:rgba(255,255,255,.4);font-size:9.5px;letter-spacing:1.5px;margin-top:2px">SISTEM INVENTARIS IBADAH</div>
+      <div style="height:1px;background:rgba(255,255,255,.1);margin:14px 0"></div>
+    </div>
+    <nav style="flex:1;padding-bottom:16px">
+      ${navs.map(n=>`
+        <div class="nav-item ${p===n.id?'active':''}" onclick="go('${n.id}')">
+          <span class="nav-icon">${n.ic}</span>
+          <span>${n.lbl}</span>
+        </div>`).join('')}
+    </nav>
+    <div style="padding:14px;border-top:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.18);flex-shrink:0">
+      <div style="color:#fff;font-size:13px;font-weight:600">${S.user?.nama||''}</div>
+      <div style="color:rgba(255,255,255,.45);font-size:11px;margin:2px 0 10px">${roleLabel(r)}</div>
+      <button onclick="doLogout()" class="btn btn-ghost" style="width:100%;padding:7px;font-size:12.5px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2)">Keluar</button>
+    </div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PAGES
+// ═══════════════════════════════════════════════════════════════
+function tplPage() {
+  switch(S.page) {
+    case 'dashboard':    return tplDashboard();
+    case 'barang':       return tplBarang();
+    case 'form-barang':  return tplFormBarang();
+    case 'cari':         return tplCari();
+    case 'riwayat':      return tplRiwayat();
+    case 'laporan':      return tplLaporan();
+    case 'pengguna':     return tplPengguna();
+    case 'form-pengguna':return tplFormPengguna();
+    case 'pengaturan':   return tplPengaturan();
+    default:             return tplDashboard();
+  }
+}
+
+// ── DASHBOARD ──────────────────────────────────────────────────
+function tplDashboard() {
+  return `
+  <div class="ph">
+    <div>
+      <h1 class="ff">Dashboard</h1>
+      <p>Selamat datang, <strong>${S.user?.nama}</strong> (${roleLabel(S.user?.role)})</p>
+    </div>
+    <div style="font-size:13px;color:var(--muted)">${new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+  </div>
+  <div id="stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:20px">
+    <div style="text-align:center;padding:20px;color:var(--muted)"><div class="spin spin-dk" style="width:24px;height:24px;margin:auto"></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:600;color:var(--primary);margin-bottom:12px">📋 Aktivitas Terbaru</h3>
+      <div id="recent">Memuat…</div>
+    </div>
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:600;color:var(--primary);margin-bottom:12px">⚠️ Perlu Perhatian</h3>
+      <div id="attn">Memuat…</div>
+    </div>
+  </div>`;
+}
+
+// ── BARANG LIST ────────────────────────────────────────────────
+function tplBarang() {
+  return `
+  <div class="ph">
+    <div><h1 class="ff">Data Barang</h1><p>Kelola inventaris barang tempat ibadah</p></div>
+    <button class="btn btn-accent" onclick="go('form-barang')">+ Tambah Barang</button>
+  </div>
+  <div class="card" id="filter-bar" style="margin-bottom:14px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <div class="lbl">Cari Nama / Kode</div>
+        <input class="inp" id="f-q" style="width:190px" placeholder="Ketik untuk cari…" oninput="filterItems()">
+      </div>
+      <div>
+        <div class="lbl">Jenis</div>
+        <select class="inp" id="f-jenis" style="width:170px" onchange="filterItems()">
+          <option value="">Semua Jenis</option>
+          ${JENIS_LIST.map(j=>`<option>${j}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <div class="lbl">Status</div>
+        <select class="inp" id="f-status" style="width:160px" onchange="filterItems()">
+          <option value="">Semua Status</option>
+          <option value="aktif">Masih Digunakan</option>
+          <option value="rusak">Rusak</option>
+        </select>
+      </div>
+      <div>
+        <div class="lbl">Peminjaman</div>
+        <select class="inp" id="f-pinjam" style="width:160px" onchange="filterItems()">
+          <option value="">Semua</option>
+          <option value="dipinjam">Sedang Dipinjam</option>
+          <option value="tersedia">Tersedia</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" onclick="resetFilter()">Reset</button>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto"><div id="items-tbl">Memuat…</div></div>`;
+}
+
+const JENIS_LIST = ['Perlengkapan Ibadah','Peralatan','Furnitur','Elektronik','Lainnya'];
+
+// ── FORM BARANG ────────────────────────────────────────────────
+function tplFormBarang() {
+  const it = S.item, ed = !!it;
+  const v = (k,d='') => it?.[k]??d;
+  const vp = (k,d='') => it?.peminjaman?.[k]??d;
+  const sel = (a,b) => a===b?'selected':'';
+  const chk = (a,b) => a===b?'checked':'';
+  return `
+  <div style="max-width:780px">
+    <div class="ph">
+      <div><h1 class="ff">${ed?'Edit Barang':'Tambah Barang'}</h1><p>${ed?'Ubah data barang yang ada':'Input barang baru ke inventaris'}</p></div>
+      <button class="btn btn-outline" onclick="go('barang')">← Kembali</button>
+    </div>
+    <div class="card">
+      <form id="frm-barang" onsubmit="submitItem(event)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="fgrp">
+            <label class="lbl">Kode Barang *</label>
+            <input class="inp" name="kode" value="${v('kode',mkKode())}" required>
+          </div>
+          <div class="fgrp">
+            <label class="lbl">Nama Barang *</label>
+            <input class="inp" name="nama" value="${v('nama')}" required placeholder="Nama barang">
+          </div>
+          <div class="fgrp">
+            <label class="lbl">Jenis *</label>
+            <select class="inp" name="jenis" required>
+              <option value="">Pilih jenis…</option>
+              ${JENIS_LIST.map(j=>`<option ${sel(v('jenis'),j)}>${j}</option>`).join('')}
+            </select>
+          </div>
+          <div class="fgrp">
+            <label class="lbl">Jumlah *</label>
+            <input class="inp" type="number" name="jumlah" value="${v('jumlah',1)}" min="0" required>
+          </div>
+          <div class="fgrp">
+            <label class="lbl">Tanggal Diperoleh</label>
+            <input class="inp" type="date" name="tanggalDiperoleh" value="${v('tanggalDiperoleh')}">
+          </div>
+          <div class="fgrp">
+            <label class="lbl">Diperoleh Dari</label>
+            <input class="inp" name="diperolehDari" value="${v('diperolehDari')}" placeholder="Nama donatur / lembaga">
+          </div>
+          <div class="fgrp" style="grid-column:1/-1">
+            <label class="lbl">Lokasi Penempatan</label>
+            <input class="inp" name="lokasi" value="${v('lokasi')}" placeholder="Contoh: Ruang Utama, Gudang, Selasar…">
+          </div>
+
+          <!-- STATUS -->
+          <div class="fgrp">
+            <label class="lbl">Status / Kondisi *</label>
+            <div class="radio-group">
+              <label class="radio-item">
+                <input type="radio" name="status" value="aktif" ${chk(v('status','aktif'),'aktif')}> 
+                <span class="bdg bdg-g">✓ Masih Digunakan</span>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="status" value="rusak" ${chk(v('status','aktif'),'rusak')}>
+                <span class="bdg bdg-r">✕ Rusak</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- PERAWATAN -->
+          <div class="fgrp">
+            <label class="lbl">Jadwal Perawatan</label>
+            <div class="radio-group">
+              <label class="radio-item">
+                <input type="radio" name="jadwal" value="ada" ${chk(v('jadwalPerawatan','tidak'),'ada')} onchange="toggleSection('sec-rawat',this.value==='ada')">
+                Ada Perawatan
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="jadwal" value="tidak" ${chk(v('jadwalPerawatan','tidak'),'tidak')} onchange="toggleSection('sec-rawat',false)">
+                Tidak Ada
+              </label>
+            </div>
+          </div>
+
+          <div id="sec-rawat" style="grid-column:1/-1;${v('jadwalPerawatan','tidak')==='ada'?'':'display:none'}">
+            <label class="lbl">Detail Jadwal Perawatan</label>
+            <input class="inp" name="detailPerawatan" value="${v('detailPerawatan')}" placeholder="Contoh: Setiap 3 bulan – pengecekan rutin">
+          </div>
+
+          <!-- PEMINJAMAN -->
+          <div class="fgrp" style="grid-column:1/-1">
+            <label class="lbl">Status Peminjaman</label>
+            <div class="radio-group">
+              <label class="radio-item">
+                <input type="radio" name="dipinjam" value="ya" ${vp('dipinjam',false)?'checked':''} onchange="toggleSection('sec-pinjam',true)">
+                <span class="bdg bdg-y">Sedang Dipinjam</span>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="dipinjam" value="tidak" ${!vp('dipinjam',false)?'checked':''} onchange="toggleSection('sec-pinjam',false)">
+                <span class="bdg bdg-n">Tersedia</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="sec-pinjam" style="grid-column:1/-1;display:${vp('dipinjam',false)?'grid':'none'};grid-template-columns:1fr 1fr;gap:14px">
+            <div class="fgrp">
+              <label class="lbl">Jumlah Dipinjam</label>
+              <input class="inp" type="number" name="jmlPinjam" value="${vp('jumlahDipinjam',1)}" min="1">
+            </div>
+            <div class="fgrp">
+              <label class="lbl">Nama Peminjam</label>
+              <input class="inp" name="peminjam" value="${vp('peminjam')}" placeholder="Nama orang / organisasi">
+            </div>
+          </div>
+
+        </div>
+        <div style="display:flex;gap:10px;padding-top:14px;border-top:1px solid var(--border);margin-top:4px">
+          <button type="submit" class="btn btn-accent" id="sbmt-btn">${ed?'💾 Simpan Perubahan':'+ Tambah Barang'}</button>
+          <button type="button" class="btn btn-outline" onclick="go('barang')">Batal</button>
+        </div>
+      </form>
+    </div>
+  </div>`;
+}
+
+// ── CARI ───────────────────────────────────────────────────────
+function tplCari() {
+  return `
+  <div class="ph"><div><h1 class="ff">Pencarian Barang</h1><p>Temukan barang berdasarkan berbagai kriteria</p></div></div>
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+      <div class="fgrp"><label class="lbl">Kode / Nama</label><input class="inp" id="sc-q" placeholder="Ketik kode atau nama…"></div>
+      <div class="fgrp"><label class="lbl">Jenis</label>
+        <select class="inp" id="sc-jenis"><option value="">Semua</option>${JENIS_LIST.map(j=>`<option>${j}</option>`).join('')}</select>
+      </div>
+      <div class="fgrp"><label class="lbl">Lokasi</label><input class="inp" id="sc-lok" placeholder="Lokasi penempatan…"></div>
+      <div class="fgrp"><label class="lbl">Diperoleh Dari</label><input class="inp" id="sc-dari" placeholder="Nama donatur…"></div>
+      <div class="fgrp"><label class="lbl">Tanggal Diperoleh (dari)</label><input class="inp" type="date" id="sc-t1"></div>
+      <div class="fgrp"><label class="lbl">Tanggal Diperoleh (s/d)</label><input class="inp" type="date" id="sc-t2"></div>
+      <div class="fgrp"><label class="lbl">Status / Kondisi</label>
+        <select class="inp" id="sc-status"><option value="">Semua</option><option value="aktif">Masih Digunakan</option><option value="rusak">Rusak</option></select>
+      </div>
+      <div class="fgrp"><label class="lbl">Jadwal Perawatan</label>
+        <select class="inp" id="sc-rawat"><option value="">Semua</option><option value="ada">Ada</option><option value="tidak">Tidak Ada</option></select>
+      </div>
+      <div class="fgrp"><label class="lbl">Peminjaman</label>
+        <select class="inp" id="sc-pinjam"><option value="">Semua</option><option value="dipinjam">Dipinjam</option><option value="tersedia">Tersedia</option></select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary" onclick="doSearch()">🔍 Cari Sekarang</button>
+      <button class="btn btn-ghost" onclick="resetSearch()">Reset</button>
+    </div>
+  </div>
+  <div class="card" id="sc-result" style="min-height:160px;display:flex;align-items:center;justify-content:center">
+    <p style="color:var(--muted);font-size:13.5px">Masukkan kriteria di atas lalu klik <strong>Cari Sekarang</strong></p>
+  </div>`;
+}
+
+// ── RIWAYAT ────────────────────────────────────────────────────
+function tplRiwayat() {
+  return `
+  <div class="ph">
+    <div><h1 class="ff">Riwayat Aktivitas</h1><p>Log semua perubahan data barang oleh admin &amp; manager</p></div>
+    <button class="btn btn-outline" onclick="exportCSV()">⬇ Export CSV</button>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div><div class="lbl">Filter Aksi</div>
+        <select class="inp" id="rv-act" style="width:150px" onchange="loadHistory()">
+          <option value="">Semua Aksi</option>
+          <option value="tambah">Tambah</option>
+          <option value="edit">Edit</option>
+          <option value="hapus">Hapus</option>
+        </select>
+      </div>
+      <div><div class="lbl">Filter Role</div>
+        <select class="inp" id="rv-role" style="width:180px" onchange="loadHistory()">
+          <option value="">Semua Role</option>
+          <option value="superadmin">Super Admin</option>
+          <option value="admin">Admin</option>
+          <option value="manager">Manager</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto"><div id="hist-tbl">Memuat…</div></div>`;
+}
+
+// ── LAPORAN ────────────────────────────────────────────────────
+function tplLaporan() {
+  const tabs = ['Jenis','Lokasi','Status','Peminjaman','Pencatatan'];
+  return `
+  <div class="ph">
+    <div><h1 class="ff">Laporan Inventaris</h1><p>Analisis dan ringkasan data barang</p></div>
+    <button class="btn btn-outline" onclick="window.print()">🖨️ Cetak</button>
+  </div>
+  <div class="tabs">
+    ${tabs.map((t,i)=>`<button class="tab-btn ${i===S.lapTab?'active':''}" onclick="switchTab(${i})">${t}</button>`).join('')}
+  </div>
+  <div id="lap-body">Memuat…</div>`;
+}
+
+// ── PENGGUNA ───────────────────────────────────────────────────
+function tplPengguna() {
+  return `
+  <div class="ph">
+    <div><h1 class="ff">Manajemen Pengguna</h1><p>Kelola akun Admin dan Manager</p></div>
+    <button class="btn btn-accent" onclick="go('form-pengguna')">+ Tambah Pengguna</button>
+  </div>
+  <div class="card" style="overflow-x:auto"><div id="usr-tbl">Memuat…</div></div>`;
+}
+
+// ── FORM PENGGUNA ──────────────────────────────────────────────
+function tplFormPengguna() {
+  const u = S.udata, ed = !!u;
+  const cur = S.user?.role;
+  const roles = cur==='superadmin'
+    ? [['admin','Admin'],['manager','Manager Perlengkapan']]
+    : [['manager','Manager Perlengkapan']];
+  return `
+  <div style="max-width:480px">
+    <div class="ph">
+      <div><h1 class="ff">${ed?'Edit Pengguna':'Tambah Pengguna'}</h1></div>
+      <button class="btn btn-outline" onclick="go('pengguna')">← Kembali</button>
+    </div>
+    <div class="card">
+      <form id="frm-usr" onsubmit="submitUser(event)">
+        <div class="fgrp"><label class="lbl">Nama Lengkap *</label>
+          <input class="inp" name="nama" value="${u?.nama||''}" required>
+        </div>
+        ${!ed?`
+        <div class="fgrp"><label class="lbl">Email *</label>
+          <input class="inp" type="email" name="email" required>
+        </div>
+        <div class="fgrp"><label class="lbl">Password *</label>
+          <input class="inp" type="password" name="password" required minlength="6" placeholder="Minimal 6 karakter">
+        </div>`:''}
+        <div class="fgrp"><label class="lbl">Role *</label>
+          <select class="inp" name="role" required>
+            ${roles.map(([v,l])=>`<option value="${v}" ${u?.role===v?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        ${ed?`<div class="fgrp"><label class="lbl">Status Akun</label>
+          <select class="inp" name="active">
+            <option value="true" ${u?.active!==false?'selected':''}>Aktif</option>
+            <option value="false" ${u?.active===false?'selected':''}>Nonaktif</option>
+          </select>
+        </div>`:''}
+        <div style="display:flex;gap:10px;margin-top:6px">
+          <button type="submit" class="btn btn-accent">${ed?'💾 Simpan':'+ Tambah'}</button>
+          <button type="button" class="btn btn-outline" onclick="go('pengguna')">Batal</button>
+        </div>
+      </form>
+    </div>
+  </div>`;
+}
+
+// ── PENGATURAN ─────────────────────────────────────────────────
+function tplPengaturan() {
+  return `
+  <div class="ph"><div><h1 class="ff">Pengaturan &amp; Backup</h1><p>Kelola data sistem secara menyeluruh</p></div></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px">
+    <div class="card">
+      <div style="font-size:36px;margin-bottom:10px">💾</div>
+      <h3 style="font-size:15px;font-weight:600;color:var(--primary);margin-bottom:8px">Backup Data</h3>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Unduh seluruh data inventaris, pengguna, dan riwayat dalam format JSON.</p>
+      <button class="btn btn-primary" onclick="doBackup()">⬇ Unduh Backup</button>
+    </div>
+    <div class="card">
+      <div style="font-size:36px;margin-bottom:10px">🔄</div>
+      <h3 style="font-size:15px;font-weight:600;color:var(--primary);margin-bottom:8px">Restore Data</h3>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Pulihkan data dari file backup JSON. Data barang yang ada akan ditimpa.</p>
+      <label class="btn btn-outline" style="cursor:pointer;display:inline-block">
+        📂 Pilih File Backup
+        <input type="file" accept=".json" style="display:none" onchange="handleRestore(this)">
+      </label>
+    </div>
+    <div class="card" style="border:1.5px solid #fee2e2">
+      <div style="font-size:36px;margin-bottom:10px">⚠️</div>
+      <h3 style="font-size:15px;font-weight:600;color:var(--danger);margin-bottom:8px">Reset Semua Data</h3>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Hapus SEMUA data barang &amp; riwayat. Akun pengguna tidak ikut terhapus. <strong>Tidak dapat dibatalkan!</strong></p>
+      <button class="btn btn-danger" onclick="confirmReset()">🗑️ Reset Data</button>
+    </div>
+  </div>
+
+  <div class="card" style="background:#F0FDF4;border-color:#86EFAC">
+    <h3 style="font-size:13.5px;font-weight:600;color:var(--primary);margin-bottom:8px">🔒 Firestore Security Rules</h3>
+    <p style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Salin rules ini ke <strong>Firebase Console → Firestore Database → Rules</strong>:</p>
+    <pre style="background:#1B4332;color:#86EFAC;padding:14px;border-radius:10px;font-size:11.5px;overflow-x:auto;line-height:1.6">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuth()       { return request.auth != null; }
+    function getU()         { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isSuperAdmin() { return isAuth() && getU().role == 'superadmin'; }
+    function isAdmin()      { return isAuth() && getU().role in ['superadmin','admin']; }
+    function isActive()     { return isAuth() && getU().active != false; }
+
+    match /users/{uid} {
+      allow read:   if isActive();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /items/{id} {
+      allow read:             if isActive();
+      allow create, update:   if isActive();
+      allow delete:           if isActive();
+    }
+    match /history/{id} {
+      allow read:   if isActive();
+      allow create: if isActive();
+      allow delete: if isSuperAdmin();
+    }
+  }
+}</pre>
+  </div>`;
+}
+
+// ── LOGIN ──────────────────────────────────────────────────────
+function tplLogin() {
+  return `
+  <div class="login-wrap">
+    <div style="text-align:center;width:100%;max-width:400px;padding:20px">
+      <div style="font-size:56px;margin-bottom:6px">🕌</div>
+      <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">SIMBA</div>
+      <div style="color:rgba(255,255,255,.45);font-size:10.5px;letter-spacing:2px;margin-bottom:30px">SISTEM INVENTARIS TEMPAT IBADAH</div>
+      <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:30px">
+        <form id="frm-login" onsubmit="handleLogin(event)">
+          <div class="fgrp" style="text-align:left">
+            <label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Email</label>
+            <input class="inp" type="email" id="l-email" placeholder="nama@email.com" required>
+          </div>
+          <div class="fgrp" style="text-align:left">
+            <label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Password</label>
+            <input class="inp" type="password" id="l-pw" placeholder="••••••••" required>
+          </div>
+          <button type="submit" class="btn btn-accent" id="l-btn" style="width:100%;padding:11px;font-size:14.5px;margin-top:6px">Masuk ke SIMBA</button>
+          <div id="l-err" style="color:#fca5a5;font-size:13px;margin-top:10px;display:none"></div>
+        </form>
+      </div>
+      <div style="color:rgba(255,255,255,.25);font-size:11px;margin-top:16px">SIMBA v1.0 © ${new Date().getFullYear()}</div>
+    </div>
+  </div>`;
+}
+
+// ── SETUP ──────────────────────────────────────────────────────
+function tplSetup() {
+  return `
+  <div class="login-wrap">
+    <div style="width:100%;max-width:400px;padding:20px;text-align:center">
+      <div style="font-size:56px;margin-bottom:6px">🕌</div>
+      <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">SIMBA</div>
+      <div style="color:rgba(255,255,255,.65);font-size:13.5px;margin:8px 0 24px">Setup Awal – Buat Akun Super Admin</div>
+      <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:28px;text-align:left">
+        <p style="color:rgba(255,255,255,.6);font-size:13px;margin-bottom:18px">Belum ada pengguna di sistem. Buat akun Super Admin untuk memulai SIMBA.</p>
+        <form id="frm-setup" onsubmit="handleSetup(event)">
+          <div class="fgrp"><label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Nama Lengkap</label>
+            <input class="inp" id="su-nama" required placeholder="Nama admin">
+          </div>
+          <div class="fgrp"><label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Email</label>
+            <input class="inp" type="email" id="su-email" required placeholder="email@admin.com">
+          </div>
+          <div class="fgrp"><label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Password</label>
+            <input class="inp" type="password" id="su-pw" required minlength="6" placeholder="Minimal 6 karakter">
+          </div>
+          <button type="submit" class="btn btn-accent" style="width:100%;padding:11px">Buat Akun Super Admin</button>
+          <div id="su-err" style="color:#fca5a5;font-size:13px;margin-top:10px;display:none"></div>
+        </form>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BIND & EVENTS
+// ═══════════════════════════════════════════════════════════════
+function bindLogin() {}
+function bindSetup() {}
+
+function bindPage() {
+  switch(S.page) {
+    case 'dashboard':  loadDashboard(); break;
+    case 'barang':     loadItems(); break;
+    case 'riwayat':    loadHistory(); break;
+    case 'laporan':    loadLaporan(S.lapTab); break;
+    case 'pengguna':   loadUsers(); break;
+  }
+}
+
+// ─ login ────────────────────────────────────────────────────
+async function handleLogin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('l-btn');
+  const err = document.getElementById('l-err');
+  btn.innerHTML = '<span class="spin"></span> Masuk…'; btn.disabled = true;
+  err.style.display = 'none';
+  try {
+    S.user = await doLogin(document.getElementById('l-email').value, document.getElementById('l-pw').value);
+    go('dashboard');
+  } catch(ex) {
+    const m = {
+      'auth/user-not-found':'Email tidak terdaftar',
+      'auth/wrong-password':'Password salah',
+      'auth/invalid-email':'Format email tidak valid',
+      'auth/too-many-requests':'Terlalu banyak percobaan, tunggu sebentar',
+      'auth/invalid-credential':'Email atau password salah',
+    };
+    err.textContent = m[ex.code] || ex.message;
+    err.style.display = 'block';
+    btn.innerHTML = 'Masuk ke SIMBA'; btn.disabled = false;
+  }
+}
+
+async function handleSetup(e) {
+  e.preventDefault();
+  const err = document.getElementById('su-err');
+  try {
+    await setupSuperAdmin(
+      document.getElementById('su-nama').value,
+      document.getElementById('su-email').value,
+      document.getElementById('su-pw').value
+    );
+    toast('Super Admin dibuat! Silakan login.'); S.page='login'; render();
+  } catch(ex) { err.textContent=ex.message; err.style.display='block'; }
+}
+
+// ─ helper toggle ────────────────────────────────────────────
+function toggleSection(id, show) {
+  const el = document.getElementById(id);
+  if (el) { el.style.display = show ? (id==='sec-pinjam'?'grid':'block') : 'none'; }
+}
+
+// ─ submit barang ─────────────────────────────────────────────
+async function submitItem(e) {
+  e.preventDefault();
+  const f = e.target, btn = document.getElementById('sbmt-btn');
+  const dp = f.dipinjam.value === 'ya';
+  const data = {
+    kode:              f.kode.value.trim(),
+    nama:              f.nama.value.trim(),
+    jenis:             f.jenis.value,
+    jumlah:            parseInt(f.jumlah.value),
+    tanggalDiperoleh:  f.tanggalDiperoleh.value,
+    diperolehDari:     f.diperolehDari.value.trim(),
+    lokasi:            f.lokasi.value.trim(),
+    status:            f.status.value,
+    jadwalPerawatan:   f.jadwal.value,
+    detailPerawatan:   f.detailPerawatan?.value?.trim() || '',
+    peminjaman: {
+      dipinjam:       dp,
+      jumlahDipinjam: dp ? parseInt(f.jmlPinjam?.value||0) : 0,
+      peminjam:       dp ? (f.peminjam?.value?.trim()||'') : '',
+    },
+  };
+  btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try {
+    if (S.item) { await dbUpdateItem(S.item.id, S.item, data); toast('Barang diperbarui!'); }
+    else        { await dbCreateItem(data); toast('Barang ditambahkan!'); }
+    go('barang');
+  } catch(ex) { toast('Gagal: '+ex.message,'err'); btn.disabled=false; btn.textContent=S.item?'💾 Simpan Perubahan':'+ Tambah Barang'; }
+}
+
+// ─ submit user ───────────────────────────────────────────────
+async function submitUser(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    if (S.udata) {
+      await dbUpdateUser(S.udata.uid||S.udata.id, {
+        nama:f.nama.value.trim(), role:f.role.value, active:f.active?.value==='true',
+      });
+      toast('Pengguna diperbarui!');
+    } else {
+      await dbCreateUser({nama:f.nama.value.trim(),email:f.email.value.trim(),password:f.password.value,role:f.role.value});
+      toast('Pengguna ditambahkan!');
+    }
+    go('pengguna');
+  } catch(ex) {
+    const m={'auth/email-already-in-use':'Email sudah digunakan','auth/weak-password':'Password terlalu lemah'};
+    toast(m[ex.code]||ex.message,'err');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DATA LOADERS
+// ═══════════════════════════════════════════════════════════════
+async function loadDashboard() {
+  try {
+    const [items, hist] = await Promise.all([dbItems(), dbHistory()]);
+    const total = items.length;
+    const rusak = items.filter(i=>i.status==='rusak').length;
+    const pinjam = items.filter(i=>i.peminjaman?.dipinjam).length;
+    const rawat = items.filter(i=>i.jadwalPerawatan==='ada').length;
+
+    document.getElementById('stats').innerHTML = [
+      {ic:'📦', lbl:'Total Barang',       val:total,        col:'var(--primary)'},
+      {ic:'✅', lbl:'Masih Digunakan',    val:total-rusak,   col:'var(--success)'},
+      {ic:'🔴', lbl:'Kondisi Rusak',      val:rusak,         col:'var(--danger)'},
+      {ic:'🔄', lbl:'Sedang Dipinjam',    val:pinjam,        col:'var(--warn)'},
+      {ic:'🔧', lbl:'Ada Jadwal Rawat',   val:rawat,         col:'var(--info)'},
+    ].map(s=>`
+      <div class="sc">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:26px;font-weight:700;color:${s.col}">${s.val}</div>
+            <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${s.lbl}</div>
+          </div>
+          <div style="font-size:28px">${s.ic}</div>
+        </div>
+      </div>`).join('');
+
+    // Recent activity
+    const rec = document.getElementById('recent');
+    if (!hist.length) { rec.innerHTML='<p style="color:var(--muted);font-size:13px">Belum ada aktivitas</p>'; }
+    else rec.innerHTML = hist.slice(0,8).map(h=>`
+      <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:15px">${h.action==='tambah'?'➕':h.action==='edit'?'✏️':'🗑️'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.itemNama||'–'}</div>
+          <div style="font-size:11px;color:var(--muted)">${h.action.toUpperCase()} – ${h.userName} • ${fmt.dt(h.timestamp)}</div>
+        </div>
+      </div>`).join('');
+
+    // Attention
+    const at = document.getElementById('attn');
+    const rusakItems  = items.filter(i=>i.status==='rusak');
+    const pinjamItems = items.filter(i=>i.peminjaman?.dipinjam);
+    let html = '';
+    if (rusakItems.length) html += `
+      <div style="font-size:11.5px;font-weight:700;color:var(--danger);margin-bottom:5px">🔴 RUSAK (${rusakItems.length})</div>
+      ${rusakItems.slice(0,4).map(i=>`<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${i.nama} <span style="color:var(--muted);font-size:11px">${i.lokasi||''}</span></div>`).join('')}
+      ${rusakItems.length>4?`<div style="font-size:11px;color:var(--muted);margin-top:3px">+${rusakItems.length-4} lainnya</div>`:''}
+      <div style="height:10px"></div>`;
+    if (pinjamItems.length) html += `
+      <div style="font-size:11.5px;font-weight:700;color:var(--warn);margin-bottom:5px">🟡 DIPINJAM (${pinjamItems.length})</div>
+      ${pinjamItems.slice(0,4).map(i=>`<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${i.nama} <span style="color:var(--muted);font-size:11px">→ ${i.peminjaman?.peminjam||'–'}</span></div>`).join('')}`;
+    at.innerHTML = html || '<p style="color:var(--muted);font-size:13px">Tidak ada item yang perlu perhatian 🎉</p>';
+  } catch(e){ toast('Gagal memuat dashboard: '+e.message,'err'); }
+}
+
+// ── ITEMS TABLE ───────────────────────────────────────────────
+let _items = [];
+
+async function loadItems() {
+  try { _items = await dbItems(); renderItemsTable(_items); }
+  catch(e) { document.getElementById('items-tbl').innerHTML=`<p style="color:var(--danger)">Error: ${e.message}</p>`; }
+}
+
+function renderItemsTable(items) {
+  const el = document.getElementById('items-tbl');
+  if (!el) return;
+  if (!items.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada barang. Tambahkan barang baru!</p>'; return; }
+  el.innerHTML = `
+    <div style="margin-bottom:8px;font-size:13px;color:var(--muted)">Menampilkan <strong>${items.length}</strong> barang</div>
+    <table class="tbl">
+      <thead><tr>
+        <th>Kode</th><th>Nama Barang</th><th>Jenis</th><th>Jml</th>
+        <th>Lokasi</th><th>Status</th><th>Peminjaman</th><th>Perawatan</th><th>Aksi</th>
+      </tr></thead>
+      <tbody>
+      ${items.map(it=>`
+        <tr>
+          <td style="font-family:monospace;font-size:11.5px">${it.kode||'–'}</td>
+          <td style="font-weight:500">${it.nama}</td>
+          <td style="font-size:12px">${it.jenis||'–'}</td>
+          <td>${it.jumlah||0}</td>
+          <td style="font-size:12px;color:var(--muted)">${it.lokasi||'–'}</td>
+          <td><span class="bdg ${it.status==='rusak'?'bdg-r':'bdg-g'}">${it.status==='rusak'?'Rusak':'Aktif'}</span></td>
+          <td>
+            ${it.peminjaman?.dipinjam
+              ?`<span class="bdg bdg-y" style="font-size:10.5px">📤 ${it.peminjaman.peminjam||'–'} (${it.peminjaman.jumlahDipinjam||0})</span>`
+              :`<span class="bdg bdg-n" style="font-size:10.5px">Tersedia</span>`}
+          </td>
+          <td><span class="bdg ${it.jadwalPerawatan==='ada'?'bdg-b':'bdg-n'}" style="font-size:10.5px">${it.jadwalPerawatan==='ada'?'Ada':'–'}</span></td>
+          <td>
+            <div style="display:flex;gap:5px">
+              <button class="act-btn act-edit" onclick="editItem('${it.id}')">Edit</button>
+              <button class="act-btn act-del" onclick="delItem('${it.id}','${it.nama.replace(/'/g,"\\'")}')">Hapus</button>
+            </div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function filterItems() {
+  const q  = document.getElementById('f-q')?.value.toLowerCase()||'';
+  const jn = document.getElementById('f-jenis')?.value||'';
+  const st = document.getElementById('f-status')?.value||'';
+  const pn = document.getElementById('f-pinjam')?.value||'';
+  renderItemsTable(_items.filter(it=>{
+    if (q  && !it.nama?.toLowerCase().includes(q) && !it.kode?.toLowerCase().includes(q)) return false;
+    if (jn && it.jenis!==jn) return false;
+    if (st && it.status!==st) return false;
+    if (pn==='dipinjam' && !it.peminjaman?.dipinjam) return false;
+    if (pn==='tersedia'  &&  it.peminjaman?.dipinjam) return false;
+    return true;
+  }));
+}
+
+function resetFilter() {
+  ['f-q','f-jenis','f-status','f-pinjam'].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; });
+  renderItemsTable(_items);
+}
+
+async function editItem(id) {
+  const it = _items.find(i=>i.id===id) || await dbItem(id);
+  go('form-barang', {item:it});
+}
+
+function delItem(id, nama) {
+  if (!confirm(`Hapus barang "${nama}"?\n\nTindakan ini akan dicatat ke riwayat.`)) return;
+  const it = _items.find(i=>i.id===id);
+  dbDeleteItem(id, it)
+    .then(()=>{ toast('Barang dihapus'); loadItems(); })
+    .catch(e=>toast('Gagal: '+e.message,'err'));
+}
+
+// ── SEARCH ───────────────────────────────────────────────────
+async function doSearch() {
+  const q    = document.getElementById('sc-q')?.value.toLowerCase()||'';
+  const jn   = document.getElementById('sc-jenis')?.value||'';
+  const lok  = document.getElementById('sc-lok')?.value.toLowerCase()||'';
+  const dari = document.getElementById('sc-dari')?.value.toLowerCase()||'';
+  const t1   = document.getElementById('sc-t1')?.value||'';
+  const t2   = document.getElementById('sc-t2')?.value||'';
+  const st   = document.getElementById('sc-status')?.value||'';
+  const rw   = document.getElementById('sc-rawat')?.value||'';
+  const pn   = document.getElementById('sc-pinjam')?.value||'';
+
+  const el = document.getElementById('sc-result');
+  el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;padding:40px;gap:10px"><div class="spin spin-dk"></div><span style="color:var(--muted)">Mencari…</span></div>';
+
+  try {
+    const all = await dbItems();
+    const res = all.filter(it=>{
+      if (q    && !it.nama?.toLowerCase().includes(q) && !it.kode?.toLowerCase().includes(q)) return false;
+      if (jn   && it.jenis!==jn) return false;
+      if (lok  && !it.lokasi?.toLowerCase().includes(lok)) return false;
+      if (dari && !it.diperolehDari?.toLowerCase().includes(dari)) return false;
+      if (st   && it.status!==st) return false;
+      if (rw   && it.jadwalPerawatan!==rw) return false;
+      if (pn==='dipinjam' && !it.peminjaman?.dipinjam) return false;
+      if (pn==='tersedia'  &&  it.peminjaman?.dipinjam) return false;
+      if (t1   && it.tanggalDiperoleh && it.tanggalDiperoleh < t1) return false;
+      if (t2   && it.tanggalDiperoleh && it.tanggalDiperoleh > t2) return false;
+      return true;
+    });
+
+    if (!res.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada barang yang cocok dengan kriteria pencarian</p>'; return; }
+
+    el.innerHTML = `
+      <div style="margin-bottom:10px;font-size:13px;color:var(--muted)">Ditemukan <strong>${res.length}</strong> barang</div>
+      <div style="overflow-x:auto">
+      <table class="tbl">
+        <thead><tr><th>Kode</th><th>Nama</th><th>Jenis</th><th>Jml</th><th>Lokasi</th><th>Tgl Diperoleh</th><th>Dari</th><th>Perawatan</th><th>Status</th><th>Peminjaman</th></tr></thead>
+        <tbody>
+        ${res.map(it=>`<tr>
+          <td style="font-family:monospace;font-size:11px">${it.kode||'–'}</td>
+          <td style="font-weight:500">${it.nama}</td>
+          <td style="font-size:12px">${it.jenis||'–'}</td>
+          <td>${it.jumlah||0}</td>
+          <td style="font-size:12px">${it.lokasi||'–'}</td>
+          <td style="font-size:12px">${it.tanggalDiperoleh||'–'}</td>
+          <td style="font-size:12px">${it.diperolehDari||'–'}</td>
+          <td><span class="bdg ${it.jadwalPerawatan==='ada'?'bdg-b':'bdg-n'}" style="font-size:10px">${it.jadwalPerawatan==='ada'?'Ada':'–'}</span></td>
+          <td><span class="bdg ${it.status==='rusak'?'bdg-r':'bdg-g'}" style="font-size:10px">${it.status==='rusak'?'Rusak':'Aktif'}</span></td>
+          <td style="font-size:11px">${it.peminjaman?.dipinjam?`<span class="bdg bdg-y" style="font-size:10px">${it.peminjaman.peminjam||'–'}</span>`:'<span class="bdg bdg-n" style="font-size:10px">Tersedia</span>'}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>`;
+  } catch(e){ el.innerHTML=`<p style="color:var(--danger)">Error: ${e.message}</p>`; }
+}
+
+function resetSearch() {
+  ['sc-q','sc-jenis','sc-lok','sc-dari','sc-t1','sc-t2','sc-status','sc-rawat','sc-pinjam'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.getElementById('sc-result').innerHTML='<p style="color:var(--muted);text-align:center;padding:40px">Masukkan kriteria di atas lalu klik <strong>Cari Sekarang</strong></p>';
+}
+
+// ── HISTORY ───────────────────────────────────────────────────
+let _histCache = [];
+async function loadHistory() {
+  const el = document.getElementById('hist-tbl');
+  if (!el) return;
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:var(--muted)">Memuat…</p>';
+  try {
+    let h = await dbHistory();
+    _histCache = h;
+    const fa = document.getElementById('rv-act')?.value||'';
+    const fr = document.getElementById('rv-role')?.value||'';
+    if (fa) h = h.filter(x=>x.action===fa);
+    if (fr) h = h.filter(x=>x.userRole===fr);
+    if (!h.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada riwayat ditemukan</p>'; return; }
+    const ac = {tambah:'bdg-g',edit:'bdg-b',hapus:'bdg-r'};
+    el.innerHTML = `
+      <div style="margin-bottom:8px;font-size:13px;color:var(--muted)">Menampilkan <strong>${h.length}</strong> entri</div>
+      <table class="tbl">
+        <thead><tr><th>Waktu</th><th>Aksi</th><th>Nama Barang</th><th>Kode</th><th>Oleh</th><th>Role</th></tr></thead>
+        <tbody>
+        ${h.map(x=>`<tr>
+          <td style="font-size:12px;white-space:nowrap">${fmt.dt(x.timestamp)}</td>
+          <td><span class="bdg ${ac[x.action]||'bdg-n'}">${(x.action||'').toUpperCase()}</span></td>
+          <td style="font-weight:500">${x.itemNama||'–'}</td>
+          <td style="font-family:monospace;font-size:11.5px">${x.itemKode||'–'}</td>
+          <td>${x.userName||'–'}</td>
+          <td><span class="bdg bdg-p" style="font-size:10.5px">${roleLabel(x.userRole)}</span></td>
+        </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e){ el.innerHTML=`<p style="color:var(--danger)">Error: ${e.message}</p>`; }
+}
+
+function exportCSV() {
+  const h = _histCache;
+  if (!h.length) { toast('Belum ada data','inf'); return; }
+  const rows = [['Waktu','Aksi','Nama Barang','Kode','Oleh','Role'],...h.map(x=>[
+    fmt.dt(x.timestamp), x.action, x.itemNama, x.itemKode, x.userName, roleLabel(x.userRole)
+  ])];
+  const csv = rows.map(r=>r.map(c=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = `riwayat-simba-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Export CSV berhasil!');
+}
+
+// ── LAPORAN ───────────────────────────────────────────────────
+function switchTab(i) {
+  S.lapTab = i;
+  document.querySelectorAll('.tab-btn').forEach((b,idx)=>{
+    b.classList.toggle('active', idx===i);
+  });
+  loadLaporan(i);
+}
+
+function grpBy(arr, key) {
+  return arr.reduce((a,v)=>{ const k=v[key]||'Tidak Diketahui'; (a[k]=a[k]||[]).push(v); return a; }, {});
+}
+
+async function loadLaporan(tab) {
+  const el = document.getElementById('lap-body');
+  if (!el) return;
+  el.innerHTML = '<p style="text-align:center;padding:40px;color:var(--muted)">Memuat laporan…</p>';
+  try {
+    const items = await dbItems();
+    let html = '';
+
+    if (tab===0) {
+      html = renderLapGroup(grpBy(items,'jenis'),'Laporan per Jenis Barang');
+    } else if (tab===1) {
+      html = renderLapGroup(grpBy(items,'lokasi'),'Laporan per Lokasi Penempatan');
+    } else if (tab===2) {
+      html = renderLapGroup({
+        'Masih Digunakan': items.filter(i=>i.status!=='rusak'),
+        'Rusak':           items.filter(i=>i.status==='rusak'),
+      },'Laporan per Status / Kondisi');
+    } else if (tab===3) {
+      html = renderLapGroup({
+        'Sedang Dipinjam': items.filter(i=>i.peminjaman?.dipinjam),
+        'Tersedia':        items.filter(i=>!i.peminjaman?.dipinjam),
+      },'Laporan Peminjaman');
+    } else if (tab===4) {
+      const hist = await dbHistory();
+      const bu = grpBy(hist,'userName');
+      html = `<div class="card">
+        <h3 style="font-size:15px;font-weight:600;color:var(--primary);margin-bottom:16px">📝 Riwayat Pencatatan per Pengguna</h3>
+        ${Object.entries(bu).map(([name,acts])=>`
+          <div style="margin-bottom:14px;padding:14px;background:var(--bg);border-radius:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div>
+                <div style="font-weight:600">${name}</div>
+                <div style="font-size:12px;color:var(--muted)">${roleLabel(acts[0]?.userRole)}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:22px;font-weight:700;color:var(--primary)">${acts.length}</div>
+                <div style="font-size:11px;color:var(--muted)">total aktivitas</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:7px;flex-wrap:wrap">
+              <span class="bdg bdg-g">Tambah: ${acts.filter(a=>a.action==='tambah').length}</span>
+              <span class="bdg bdg-b">Edit: ${acts.filter(a=>a.action==='edit').length}</span>
+              <span class="bdg bdg-r">Hapus: ${acts.filter(a=>a.action==='hapus').length}</span>
+            </div>
+          </div>`).join('')}
+      </div>`;
+    }
+    el.innerHTML = html;
+  } catch(e){ el.innerHTML=`<p style="color:var(--danger)">Error: ${e.message}</p>`; }
+}
+
+function renderLapGroup(groups, title) {
+  return Object.entries(groups).map(([g,its])=>`
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <h4 style="font-weight:600;color:var(--primary);font-size:15px">${g}</h4>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+            <span class="bdg bdg-g">Aktif: ${its.filter(i=>i.status!=='rusak').length}</span>
+            <span class="bdg bdg-r">Rusak: ${its.filter(i=>i.status==='rusak').length}</span>
+            <span class="bdg bdg-y">Dipinjam: ${its.filter(i=>i.peminjaman?.dipinjam).length}</span>
+            <span class="bdg bdg-n">Total unit: ${its.reduce((s,i)=>s+(i.jumlah||0),0)}</span>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:28px;font-weight:700;color:var(--primary)">${its.length}</div>
+          <div style="font-size:11px;color:var(--muted)">jenis barang</div>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+      <table class="tbl" style="font-size:12px">
+        <thead><tr><th>Nama</th><th>Kode</th><th>Jml</th><th>Tgl Diperoleh</th><th>Status</th><th>Peminjaman</th></tr></thead>
+        <tbody>
+        ${its.map(it=>`<tr>
+          <td style="font-weight:500">${it.nama}</td>
+          <td style="font-family:monospace;font-size:11px">${it.kode||'–'}</td>
+          <td>${it.jumlah||0}</td>
+          <td>${it.tanggalDiperoleh||'–'}</td>
+          <td><span class="bdg ${it.status==='rusak'?'bdg-r':'bdg-g'}" style="font-size:10px">${it.status==='rusak'?'Rusak':'Aktif'}</span></td>
+          <td>${it.peminjaman?.dipinjam?`<span class="bdg bdg-y" style="font-size:10px">Dipinjam – ${it.peminjaman.peminjam||'–'}</span>`:'<span class="bdg bdg-n" style="font-size:10px">Tersedia</span>'}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+    </div>`).join('');
+}
+
+// ── USERS ─────────────────────────────────────────────────────
+async function loadUsers() {
+  const el = document.getElementById('usr-tbl');
+  if (!el) return;
+  try {
+    const users = await dbUsers();
+    if (!users.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada pengguna</p>'; return; }
+    el.innerHTML = `
+      <table class="tbl">
+        <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Dibuat</th><th>Aksi</th></tr></thead>
+        <tbody>
+        ${users.map(u=>`<tr>
+          <td style="font-weight:500">${u.nama} ${u.uid===S.user?.uid?'<span class="bdg bdg-b" style="font-size:10px">Anda</span>':''}</td>
+          <td style="font-size:12.5px;color:var(--muted)">${u.email||'–'}</td>
+          <td><span class="bdg bdg-p">${roleLabel(u.role)}</span></td>
+          <td><span class="bdg ${u.active!==false?'bdg-g':'bdg-r'}">${u.active!==false?'Aktif':'Nonaktif'}</span></td>
+          <td style="font-size:12px">${fmt.date(u.createdAt)}</td>
+          <td>
+            ${u.uid!==S.user?.uid?`
+              <div style="display:flex;gap:5px">
+                <button class="act-btn act-edit" onclick="editUser('${u.id||u.uid}')">Edit</button>
+                <button class="act-btn act-del" onclick="delUser('${u.uid||u.id}','${u.nama.replace(/'/g,"\\'")}')">Hapus</button>
+              </div>`:'–'}
+          </td>
+        </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e){ el.innerHTML=`<p style="color:var(--danger)">Error: ${e.message}</p>`; }
+}
+
+async function editUser(id) {
+  const d = await db.collection('users').doc(id).get();
+  if (d.exists) go('form-pengguna', {udata:{id:d.id,...d.data()}});
+}
+
+function delUser(uid, nama) {
+  if (!confirm(`Hapus pengguna "${nama}"?`)) return;
+  dbDeleteUser(uid).then(()=>{ toast('Pengguna dihapus'); loadUsers(); }).catch(e=>toast(e.message,'err'));
+}
+
+// ── PENGATURAN HANDLERS ───────────────────────────────────────
+function handleRestore(input) {
+  if (!input.files[0]) return;
+  if (confirm('Restore akan menimpa data barang yang ada. Lanjutkan?')) doRestore(input.files[0]);
+  input.value='';
+}
+
+function confirmReset() {
+  if (!confirm('⚠️ PERHATIAN!\n\nINI AKAN MENGHAPUS SEMUA DATA BARANG DAN RIWAYAT!\n\nAkun pengguna tidak ikut terhapus.\n\nLanjutkan?')) return;
+  if (!confirm('KONFIRMASI TERAKHIR\n\nApakah Anda BENAR-BENAR yakin? Data tidak bisa dipulihkan kecuali ada backup.')) return;
+  doReset();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AUTH STATE LISTENER – INIT
+// ═══════════════════════════════════════════════════════════════
+auth.onAuthStateChanged(async (fbUser) => {
+  if (fbUser) {
+    try {
+      const doc = await db.collection('users').doc(fbUser.uid).get();
+      if (doc.exists && doc.data().active !== false) {
+        S.user = { uid: fbUser.uid, ...doc.data() };
+        go('dashboard');
+      } else {
+        await auth.signOut();
+        S.page = (await needsSetup()) ? 'setup' : 'login';
+        render();
+      }
+    } catch(e) { S.page='login'; render(); }
+  } else {
+    S.page = (await needsSetup()) ? 'setup' : 'login';
+    render();
+  }
+});
+</script>
+</body>
+</html>
