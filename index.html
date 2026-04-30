@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SIV – Sistem Inventaris Vihara</title>
+  <title>SIMBA – Sistem Inventaris Tempat Ibadah</title>
 
   <!-- Firebase SDK v9 compat -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -412,9 +412,12 @@ function applyTheme() {
 function logoHtml(size='40px', forDark=false) {
   const t = S.theme;
   if (t.logoType === 'image' && t.logoBase64) {
-    return `<img src="${t.logoBase64}" style="width:${size};height:${size};object-fit:contain;border-radius:8px">`;
+    // Wrapper div agar gambar selalu center di container apapun
+    return `<div style="display:flex;align-items:center;justify-content:center;width:${size};height:${size};flex-shrink:0">` +
+           `<img src="${t.logoBase64}" style="max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:8px;display:block">` +
+           `</div>`;
   }
-  return `<span style="font-size:${size}">${t.logoEmoji||'🕌'}</span>`;
+  return `<span style="font-size:${size};line-height:1;display:inline-flex;align-items:center;justify-content:center">${t.logoEmoji||'🕌'}</span>`;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -438,15 +441,33 @@ async function setupSuperAdmin(nama, email, pw) {
       throw { code: 'superadmin-exists', message: 'Superadmin sudah terdaftar.' };
     }
   } catch(chkErr) {
-    if (chkErr.code === 'superadmin-exists') throw chkErr; // re-throw
-    // Jika permission-denied, coba lanjut buat saja
-    console.warn('Cek superadmin gagal:', chkErr.code);
+    if (chkErr.code === 'superadmin-exists') throw chkErr;
+    console.warn('Cek superadmin gagal (rules?):', chkErr.code);
   }
-  const c = await auth.createUserWithEmailAndPassword(email, pw);
-  await db.collection('users').doc(c.user.uid).set({
-    uid:c.user.uid, nama, email, role:'superadmin', active:true,
-    createdAt:FS.FieldValue.serverTimestamp(), createdBy:c.user.uid, createdByName:nama,
-  });
+
+  let authUser = null;
+  try {
+    // Step 1: Buat akun di Firebase Auth
+    const c = await auth.createUserWithEmailAndPassword(email, pw);
+    authUser = c.user;
+
+    // Step 2: Simpan dokumen ke Firestore
+    await db.collection('users').doc(authUser.uid).set({
+      uid: authUser.uid, nama, email, role: 'superadmin', active: true,
+      createdAt: FS.FieldValue.serverTimestamp(),
+      createdBy: authUser.uid, createdByName: nama,
+    });
+  } catch(err) {
+    // Jika Firestore gagal SETELAH Auth berhasil → hapus akun Auth agar tidak jadi zombie
+    if (authUser && err.code === 'permission-denied') {
+      try { await authUser.delete(); } catch(delErr) { console.warn('Gagal hapus auth user:', delErr); }
+      throw {
+        code: 'firestore-rules-not-set',
+        message: 'Firestore Rules belum dipublish! Akun Auth yang terbuat sudah dihapus otomatis. Publish Rules dulu lalu coba lagi.'
+      };
+    }
+    throw err;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -504,6 +525,8 @@ function render() {
     app.innerHTML = tplLogin(); bindLogin();
   } else if (S.page === 'setup') {
     app.innerHTML = tplSetup(); bindSetup();
+  } else if (S.page === 'repair') {
+    app.innerHTML = tplRepair(); 
   } else {
     app.innerHTML = `<div style="display:flex">${tplSidebar()}<div class="main" style="flex:1;min-width:0;">${tplPage()}</div></div>`;
     bindPage();
@@ -904,7 +927,7 @@ function tplPengaturan() {
         <div class="lbl">Logo Aplikasi</div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-top:6px">
           <!-- Preview logo saat ini -->
-          <div style="width:72px;height:72px;border:2px dashed var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;background:#F9F7F2;flex-shrink:0" id="logo-preview">
+          <div style="width:72px;height:72px;border:2px dashed var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;background:#F9F7F2;flex-shrink:0;overflow:hidden;padding:6px" id="logo-preview">
             ${logoHtml('42px')}
           </div>
           <div>
@@ -1069,6 +1092,83 @@ function tplThemePreview() {
   </div>`;
 }
 
+// ── REPAIR ─────────────────────────────────────────────────────
+// Tampil ketika akun Firebase Auth ada tapi dokumen Firestore tidak ada
+function tplRepair() {
+  const fbUser = S._repairUser;
+  const email  = fbUser?.email || '–';
+  const bg     = `linear-gradient(150deg,${darken(S.theme.colorPrimary,20)} 0%,${S.theme.colorPrimary} 45%,${lighten(S.theme.colorPrimary,25)} 100%)`;
+  return `
+  <div class="login-wrap" style="background:${bg}">
+    <div style="text-align:center;width:100%;max-width:440px;padding:20px">
+      <div style="margin-bottom:6px">${logoHtml('56px',true)}</div>
+      <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
+      <div style="color:rgba(255,255,255,.55);font-size:12.5px;margin:10px 0 24px">Perbaikan Data Akun</div>
+
+      <div style="background:rgba(255,255,255,.09);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.15);border-radius:18px;padding:26px;text-align:left">
+        <div style="background:#FEF9C3;border:1px solid #FDE047;border-radius:10px;padding:12px 14px;margin-bottom:18px">
+          <div style="font-size:13px;font-weight:700;color:#78350F;margin-bottom:4px">⚠️ Data Akun Tidak Lengkap</div>
+          <div style="font-size:12.5px;color:#92400E;line-height:1.6">
+            Akun Firebase Auth sudah ada (<strong>${email}</strong>) tapi data profil di Firestore belum tersimpan.
+            <br>Ini terjadi karena <strong>Firestore Rules belum dipublish</strong> saat setup pertama kali.
+            <br><br>Isi form di bawah untuk melengkapi data, atau klik "Keluar" dan publish Rules dulu.
+          </div>
+        </div>
+
+        <form onsubmit="handleRepair(event)">
+          <div class="fgrp" style="margin-bottom:12px">
+            <label style="display:block;font-size:12.5px;color:rgba(255,255,255,.7);margin-bottom:5px">Nama Lengkap *</label>
+            <input class="inp" id="rp-nama" required placeholder="Nama Super Admin">
+          </div>
+          <div class="fgrp" style="margin-bottom:12px">
+            <label style="display:block;font-size:12.5px;color:rgba(255,255,255,.7);margin-bottom:5px">Email (dari akun yang login)</label>
+            <input class="inp" value="${email}" disabled style="opacity:.6">
+          </div>
+          <button type="submit" class="btn btn-accent" id="rp-btn" style="width:100%;padding:11px;font-size:14px">✅ Lengkapi Data & Masuk</button>
+          <div id="rp-err" style="color:#fca5a5;font-size:13px;margin-top:10px;display:none"></div>
+        </form>
+        <button onclick="repairLogout()" style="width:100%;margin-top:10px;padding:9px;background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:8px;color:rgba(255,255,255,.6);cursor:pointer;font-size:13px;font-family:inherit">Keluar & Login Ulang</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function handleRepair(e) {
+  e.preventDefault();
+  const nama = document.getElementById('rp-nama').value.trim();
+  const err  = document.getElementById('rp-err');
+  const btn  = document.getElementById('rp-btn');
+  const fbUser = S._repairUser;
+  if (!fbUser) { S.page='login'; render(); return; }
+  btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try {
+    await db.collection('users').doc(fbUser.uid).set({
+      uid: fbUser.uid, nama, email: fbUser.email,
+      role: 'superadmin', active: true,
+      createdAt: FS.FieldValue.serverTimestamp(),
+      createdBy: fbUser.uid, createdByName: nama,
+    });
+    S.user = { uid: fbUser.uid, nama, email: fbUser.email, role: 'superadmin', active: true };
+    S._repairUser = null;
+    toast('✓ Data berhasil disimpan! Selamat datang, ' + nama);
+    go('dashboard');
+  } catch(ex) {
+    console.error('repair error:', ex.code, ex.message);
+    const msg = ex.code === 'permission-denied'
+      ? '❌ Masih permission-denied. Publish Firestore Rules dulu, lalu refresh halaman ini.'
+      : 'Gagal: ' + ex.message;
+    err.textContent = msg;
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = '✅ Lengkapi Data & Masuk';
+  }
+}
+
+async function repairLogout() {
+  S._repairUser = null;
+  await auth.signOut();
+  S.user = null; S.page = 'login'; render();
+}
+
 // ── LOGIN ──────────────────────────────────────────────────────
 function tplLogin() {
   const lg = `linear-gradient(150deg,${darken(S.theme.colorPrimary,20)} 0%,${S.theme.colorPrimary} 45%,${lighten(S.theme.colorPrimary,25)} 100%)`;
@@ -1192,11 +1292,14 @@ async function handleSetup(e) {
       return;
     }
     const m = {
-      'auth/weak-password' : 'Password minimal 6 karakter',
-      'auth/invalid-email' : 'Format email tidak valid',
-      'auth/api-key-not-valid.-please-pass-a-valid-api-key.' : 'Firebase API Key tidak valid. Periksa konfigurasi di FB_CONFIG.',
+      'auth/weak-password'   : 'Password minimal 6 karakter.',
+      'auth/invalid-email'   : 'Format email tidak valid.',
+      'auth/api-key-not-valid.-please-pass-a-valid-api-key.' : '❌ Firebase API Key salah. Periksa FB_CONFIG di index.html.',
+      'firestore-rules-not-set' : ex.message, // sudah jelas dari setupSuperAdmin
     };
-    err.textContent = m[ex.code] || ('Error: ' + (ex.message || ex.code));
+    err.innerHTML = m[ex.code]
+      ? `<span>${m[ex.code]}</span>`
+      : `<span>Error: ${ex.message || ex.code}</span>`;
     err.style.display = 'block';
     btn.disabled = false; btn.textContent = 'Buat Akun Super Admin';
   }
@@ -1268,18 +1371,21 @@ async function loadDashboard() {
 
   try { items = await dbItems(); }
   catch(e) {
-    console.error('items error:', e.code, e.message);
+    console.warn('items:', e.code, e.message);
     const st = document.getElementById('stats');
     if (st) {
-      const msg = e.code === 'permission-denied'
-        ? '⚠️ Akses ditolak Firestore. Pastikan Security Rules sudah dipublish dan akun aktif.'
+      const isPerms = e.code === 'permission-denied';
+      const msg = isPerms
+        ? `⚠️ Akses ditolak Firestore.<br>
+           <span style="font-size:12px">Pastikan <strong>Security Rules</strong> sudah dipublish di Firebase Console.<br>
+           Buka <strong>Pengaturan</strong> → scroll bawah → copy rules → paste di Firestore Console → klik Publish.</span>`
         : '⚠️ Gagal memuat barang: ' + e.message;
-      st.innerHTML = `<div style="grid-column:1/-1;padding:14px;background:#FEF2F2;border-radius:10px;color:var(--danger);font-size:13px">${msg}</div>`;
+      st.innerHTML = `<div style="grid-column:1/-1;padding:14px 16px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;color:var(--danger);font-size:13px;line-height:1.6">${msg}</div>`;
     }
   }
 
   try { hist = await dbHistory(); }
-  catch(e) { console.error('history error:', e.code, e.message); }
+  catch(e) { console.warn('history:', e.code, e.message); }
 
   // ── Stats ──
   const total  = items.length;
@@ -1742,11 +1848,12 @@ function previewColor() {
 function setLogoEmoji(em) {
   S.theme.logoType  = 'emoji';
   S.theme.logoEmoji = em;
-  // Refresh preview & emoji buttons
   const prev = document.getElementById('logo-preview');
-  if (prev) prev.innerHTML = logoHtml('42px');
-  // Re-render pengaturan page to update selected state
-  go('pengaturan');
+  if (prev) {
+    prev.innerHTML = logoHtml('42px');
+    prev.style.padding = '6px';
+  }
+  go('pengaturan'); // re-render untuk update border emoji yang dipilih
 }
 
 function resetLogoEmoji() {
@@ -1758,15 +1865,20 @@ function resetLogoEmoji() {
 function uploadLogoImage(input) {
   if (!input.files[0]) return;
   const file = input.files[0];
-  if (file.size > 500 * 1024) { toast('Ukuran gambar max 500KB', 'err'); return; }
+  if (file.size > 600 * 1024) { toast('Ukuran gambar max 600KB', 'err'); return; }
   const reader = new FileReader();
   reader.onload = (e) => {
     S.theme.logoType   = 'image';
     S.theme.logoBase64 = e.target.result;
+    // Update preview langsung tanpa re-render halaman
     const prev = document.getElementById('logo-preview');
-    if (prev) prev.innerHTML = logoHtml('42px');
+    if (prev) {
+      prev.innerHTML = logoHtml('60px');
+      prev.style.padding = '0';
+    }
+    // Re-render halaman untuk update tampilan emoji selector
     go('pengaturan');
-    toast('Logo diupload, klik Simpan Tema untuk menyimpan');
+    toast('Logo diupload! Klik Simpan Tema untuk menyimpan.');
   };
   reader.readAsDataURL(file);
 }
@@ -1786,8 +1898,20 @@ async function saveTema() {
   try {
     await dbSaveSettings(newTheme);
     toast('✓ Tema berhasil disimpan!');
-    render(); // Re-render semua termasuk sidebar
-  } catch(e) { toast('Gagal simpan: ' + e.message, 'err'); }
+    render();
+  } catch(e) {
+    console.error('saveTema error:', e.code, e.message);
+    if (e.code === 'permission-denied') {
+      toast('❌ Permission denied. Tambahkan rules /settings ke Firestore (lihat Pengaturan → Rules)', 'err');
+      // Terapkan ke lokal saja meski Firestore gagal
+      Object.assign(S.theme, newTheme);
+      applyTheme();
+      toast('⚠️ Tema diterapkan lokal sementara — perbarui Firestore Rules agar bisa disimpan', 'inf');
+      render();
+    } else {
+      toast('Gagal simpan: ' + e.message, 'err');
+    }
+  }
 }
 
 async function resetTema() {
@@ -1834,15 +1958,20 @@ auth.onAuthStateChanged(async (fbUser) => {
       const doc = await db.collection('users').doc(fbUser.uid).get();
       if (doc.exists && doc.data().active !== false) {
         S.user = { uid: fbUser.uid, ...doc.data() };
-        if (S.page === 'loading' || S.page === 'login' || S.page === 'setup') {
+        if (S.page === 'loading' || S.page === 'login' || S.page === 'setup' || S.page === 'repair') {
           go('dashboard');
         } else {
-          render(); // sudah di halaman lain, render ulang sidebar saja
+          render();
         }
+      } else if (!doc.exists) {
+        // Auth ada tapi Firestore tidak ada → kemungkinan setup terganggu
+        S._repairUser = fbUser;
+        S.page = 'repair';
+        render();
       } else {
+        // Akun nonaktif
         await auth.signOut();
-        // Akun tidak aktif atau tidak ada di Firestore
-        toast('Akun tidak aktif atau tidak ditemukan.', 'err');
+        toast('Akun Anda dinonaktifkan. Hubungi administrator.', 'err');
         S.user = null;
         S.page = 'login';
         render();
