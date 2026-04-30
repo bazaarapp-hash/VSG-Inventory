@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VSG – Sistem Inventaris</title>
+  <title>SIV – Sistem Inventaris Vihara</title>
 
   <!-- Firebase SDK v9 compat -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -1236,31 +1236,38 @@ async function submitUser(e) {
 //  DATA LOADERS
 // ═══════════════════════════════════════════════════════════════
 async function loadDashboard() {
-  try {
-    // Ambil items dan history secara terpisah agar salah satu gagal tidak blokir semua
-    let items = [], hist = [];
-    try { items = await dbItems(); } catch(e) {
-      console.error('items error:', e);
-      const errMsg = e.code === 'permission-denied'
-        ? '⚠️ Akses ditolak Firestore. Periksa Security Rules dan pastikan akun aktif.'
+  // Ambil items dan history secara terpisah agar satu gagal tidak blokir semua
+  let items = [], hist = [];
+
+  try { items = await dbItems(); }
+  catch(e) {
+    console.error('items error:', e.code, e.message);
+    const st = document.getElementById('stats');
+    if (st) {
+      const msg = e.code === 'permission-denied'
+        ? '⚠️ Akses ditolak Firestore. Pastikan Security Rules sudah dipublish dan akun aktif.'
         : '⚠️ Gagal memuat barang: ' + e.message;
-      const st = document.getElementById('stats');
-      if (st) st.innerHTML = `<div style="grid-column:1/-1;padding:14px;background:#FEF2F2;border-radius:10px;color:var(--danger);font-size:13px">${errMsg}</div>`;
+      st.innerHTML = `<div style="grid-column:1/-1;padding:14px;background:#FEF2F2;border-radius:10px;color:var(--danger);font-size:13px">${msg}</div>`;
     }
-    try { hist = await dbHistory(); } catch(e) { console.error('history error:', e); }
+  }
 
-    const total = items.length;
-    const rusak = items.filter(i=>i.status==='rusak').length;
-    const pinjam = items.filter(i=>i.peminjaman?.dipinjam).length;
-    const rawat = items.filter(i=>i.jadwalPerawatan==='ada').length;
+  try { hist = await dbHistory(); }
+  catch(e) { console.error('history error:', e.code, e.message); }
 
-    if (items.length > 0 || true) {
-    document.getElementById('stats').innerHTML = [
-      {ic:'📦', lbl:'Total Barang',       val:total,        col:'var(--primary)'},
-      {ic:'✅', lbl:'Masih Digunakan',    val:total-rusak,   col:'var(--success)'},
-      {ic:'🔴', lbl:'Kondisi Rusak',      val:rusak,         col:'var(--danger)'},
-      {ic:'🔄', lbl:'Sedang Dipinjam',    val:pinjam,        col:'var(--warn)'},
-      {ic:'🔧', lbl:'Ada Jadwal Rawat',   val:rawat,         col:'var(--info)'},
+  // ── Stats ──
+  const total  = items.length;
+  const rusak  = items.filter(i=>i.status==='rusak').length;
+  const pinjam = items.filter(i=>i.peminjaman?.dipinjam).length;
+  const rawat  = items.filter(i=>i.jadwalPerawatan==='ada').length;
+
+  const st = document.getElementById('stats');
+  if (st) {
+    st.innerHTML = [
+      {ic:'📦', lbl:'Total Barang',     val:total,       col:'var(--primary)'},
+      {ic:'✅', lbl:'Masih Digunakan',  val:total-rusak,  col:'var(--success)'},
+      {ic:'🔴', lbl:'Kondisi Rusak',    val:rusak,        col:'var(--danger)'},
+      {ic:'🔄', lbl:'Sedang Dipinjam',  val:pinjam,       col:'var(--warn)'},
+      {ic:'🔧', lbl:'Ada Jadwal Rawat', val:rawat,        col:'var(--info)'},
     ].map(s=>`
       <div class="sc">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -1271,25 +1278,28 @@ async function loadDashboard() {
           <div style="font-size:28px">${s.ic}</div>
         </div>
       </div>`).join('');
+  }
+
+  // ── Aktivitas Terbaru ──
+  const rec = document.getElementById('recent');
+  if (rec) {
+    if (!hist.length) {
+      rec.innerHTML = '<p style="color:var(--muted);font-size:13px">Belum ada aktivitas</p>';
+    } else {
+      rec.innerHTML = hist.slice(0,8).map(h=>`
+        <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:15px">${h.action==='tambah'?'➕':h.action==='edit'?'✏️':'🗑️'}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.itemNama||'–'}</div>
+            <div style="font-size:11px;color:var(--muted)">${h.action.toUpperCase()} – ${h.userName} • ${fmt.dt(h.timestamp)}</div>
+          </div>
+        </div>`).join('');
     }
+  }
 
-    } // end if items
-
-    // Recent activity
-    const rec = document.getElementById('recent');
-    if (!rec) return;
-    if (!hist.length) { rec.innerHTML='<p style="color:var(--muted);font-size:13px">Belum ada aktivitas</p>'; }
-    else rec.innerHTML = hist.slice(0,8).map(h=>`
-      <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:15px">${h.action==='tambah'?'➕':h.action==='edit'?'✏️':'🗑️'}</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.itemNama||'–'}</div>
-          <div style="font-size:11px;color:var(--muted)">${h.action.toUpperCase()} – ${h.userName} • ${fmt.dt(h.timestamp)}</div>
-        </div>
-      </div>`).join('');
-
-    // Attention
-    const at = document.getElementById('attn');
+  // ── Perlu Perhatian ──
+  const at = document.getElementById('attn');
+  if (at) {
     const rusakItems  = items.filter(i=>i.status==='rusak');
     const pinjamItems = items.filter(i=>i.peminjaman?.dipinjam);
     let html = '';
@@ -1302,7 +1312,7 @@ async function loadDashboard() {
       <div style="font-size:11.5px;font-weight:700;color:var(--warn);margin-bottom:5px">🟡 DIPINJAM (${pinjamItems.length})</div>
       ${pinjamItems.slice(0,4).map(i=>`<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${i.nama} <span style="color:var(--muted);font-size:11px">→ ${i.peminjaman?.peminjam||'–'}</span></div>`).join('')}`;
     at.innerHTML = html || '<p style="color:var(--muted);font-size:13px">Tidak ada item yang perlu perhatian 🎉</p>';
-  } catch(e){ toast('Gagal memuat dashboard: '+e.message,'err'); }
+  }
 }
 
 // ── ITEMS TABLE ───────────────────────────────────────────────
