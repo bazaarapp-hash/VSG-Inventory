@@ -376,24 +376,38 @@ async function dbSaveSettings(data) {
   applyTheme();
 }
 
+// ── Warna helpers – GLOBAL agar bisa dipanggil di mana saja ──
+function lighten(h, a) {
+  try {
+    const r = Math.min(255, parseInt(h.slice(1,3),16)+a);
+    const g = Math.min(255, parseInt(h.slice(3,5),16)+a);
+    const b = Math.min(255, parseInt(h.slice(5,7),16)+a);
+    return '#'+r.toString(16).padStart(2,'0')+g.toString(16).padStart(2,'0')+b.toString(16).padStart(2,'0');
+  } catch(e) { return h; }
+}
+function darken(h, a) {
+  try {
+    const r = Math.max(0, parseInt(h.slice(1,3),16)-a);
+    const g = Math.max(0, parseInt(h.slice(3,5),16)-a);
+    const b = Math.max(0, parseInt(h.slice(5,7),16)-a);
+    return '#'+r.toString(16).padStart(2,'0')+g.toString(16).padStart(2,'0')+b.toString(16).padStart(2,'0');
+  } catch(e) { return h; }
+}
+
 function applyTheme() {
   const t = S.theme;
   const root = document.documentElement;
-  function hexToRgb(h){const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);return `${r},${g},${b}`;}
-  function lighten(h,a){const r=Math.min(255,parseInt(h.slice(1,3),16)+a),g=Math.min(255,parseInt(h.slice(3,5),16)+a),b=Math.min(255,parseInt(h.slice(5,7),16)+a);return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;}
-  root.style.setProperty('--primary',  t.colorPrimary);
+  root.style.setProperty('--primary',   t.colorPrimary);
   root.style.setProperty('--primary-l', lighten(t.colorPrimary, 30));
   root.style.setProperty('--primary-ll',lighten(t.colorPrimary, 60));
-  root.style.setProperty('--accent',   t.colorAccent);
-  root.style.setProperty('--accent-l', lighten(t.colorAccent, 28));
-  root.style.setProperty('--bg',       t.colorBg);
+  root.style.setProperty('--accent',    t.colorAccent);
+  root.style.setProperty('--accent-l',  lighten(t.colorAccent, 28));
+  root.style.setProperty('--bg',        t.colorBg);
   document.title = t.appTitle + ' – Inventaris';
-  // Update login-wrap gradient jika ada
   document.querySelectorAll('.login-wrap').forEach(el=>{
-    el.style.background = `linear-gradient(150deg, ${darken(t.colorPrimary,20)} 0%, ${t.colorPrimary} 45%, ${lighten(t.colorPrimary,25)} 100%)`;
+    el.style.background = `linear-gradient(150deg,${darken(t.colorPrimary,20)} 0%,${t.colorPrimary} 45%,${lighten(t.colorPrimary,25)} 100%)`;
   });
 }
-function darken(h,a){const r=Math.max(0,parseInt(h.slice(1,3),16)-a),g=Math.max(0,parseInt(h.slice(3,5),16)-a),b=Math.max(0,parseInt(h.slice(5,7),16)-a);return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;}
 
 function logoHtml(size='40px', forDark=false) {
   const t = S.theme;
@@ -416,11 +430,17 @@ async function needsSetup() {
   }
 }
 async function setupSuperAdmin(nama, email, pw) {
-  // Cek lagi apakah sudah ada superadmin sebelum buat
-  const existing = await db.collection('users')
-    .where('role','==','superadmin').limit(1).get();
-  if (!existing.empty) {
-    throw { code: 'superadmin-exists', message: 'Superadmin sudah terdaftar.' };
+  // Cek apakah sudah ada superadmin (dengan fallback jika rules blok)
+  try {
+    const existing = await db.collection('users')
+      .where('role','==','superadmin').limit(1).get();
+    if (!existing.empty) {
+      throw { code: 'superadmin-exists', message: 'Superadmin sudah terdaftar.' };
+    }
+  } catch(chkErr) {
+    if (chkErr.code === 'superadmin-exists') throw chkErr; // re-throw
+    // Jika permission-denied, coba lanjut buat saja
+    console.warn('Cek superadmin gagal:', chkErr.code);
   }
   const c = await auth.createUserWithEmailAndPassword(email, pw);
   await db.collection('users').doc(c.user.uid).set({
@@ -1159,17 +1179,24 @@ async function handleSetup(e) {
     toast('Super Admin dibuat! Silakan login.');
     S.page = 'login'; render();
   } catch(ex) {
-    // Jika superadmin sudah ada ATAU email sudah terpakai → langsung ke login
-    if (ex.code === 'superadmin-exists' || ex.code === 'auth/email-already-in-use') {
+    console.warn('Setup error:', ex.code, ex.message);
+    // Semua kondisi "sudah ada" → redirect login
+    const sudahAda = [
+      'superadmin-exists',
+      'auth/email-already-in-use',
+      'auth/account-exists-with-different-credential',
+    ];
+    if (sudahAda.includes(ex.code)) {
       toast('Akun Super Admin sudah terdaftar. Silakan login.', 'inf');
       S.page = 'login'; render();
       return;
     }
     const m = {
-      'auth/weak-password'  : 'Password minimal 6 karakter',
-      'auth/invalid-email'  : 'Format email tidak valid',
+      'auth/weak-password' : 'Password minimal 6 karakter',
+      'auth/invalid-email' : 'Format email tidak valid',
+      'auth/api-key-not-valid.-please-pass-a-valid-api-key.' : 'Firebase API Key tidak valid. Periksa konfigurasi di FB_CONFIG.',
     };
-    err.textContent = m[ex.code] || ex.message;
+    err.textContent = m[ex.code] || ('Error: ' + (ex.message || ex.code));
     err.style.display = 'block';
     btn.disabled = false; btn.textContent = 'Buat Akun Super Admin';
   }
