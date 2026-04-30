@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SIMBA – Sistem Inventaris Tempat Ibadah</title>
+  <title>VSG – Sistem Inventaris</title>
 
   <!-- Firebase SDK v9 compat -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -176,12 +176,12 @@
 //  Lihat README.md untuk cara mendapatkan config Firebase
 // ═══════════════════════════════════════════════════════════════
 const FB_CONFIG = {
-  apiKey: "AIzaSyDiKUhFGh5lFB2xWIk_6eHG2OkLsZmFI2E",
-  authDomain: "inventoryvsg.firebaseapp.com",
-  projectId: "inventoryvsg",
-  storageBucket: "inventoryvsg.firebasestorage.app",
-  messagingSenderId: "73507994905",
-  appId: "1:73507994905:web:29d1c961a377bd70035988"
+  apiKey:            "GANTI_API_KEY",
+  authDomain:        "GANTI_PROJECT_ID.firebaseapp.com",
+  projectId:         "GANTI_PROJECT_ID",
+  storageBucket:     "GANTI_PROJECT_ID.appspot.com",
+  messagingSenderId: "GANTI_SENDER_ID",
+  appId:             "GANTI_APP_ID"
 };
 
 firebase.initializeApp(FB_CONFIG);
@@ -407,10 +407,21 @@ function logoHtml(size='40px', forDark=false) {
 //  DB – SETUP
 // ═══════════════════════════════════════════════════════════════
 async function needsSetup() {
-  const s = await db.collection('users').limit(1).get();
-  return s.empty;
+  try {
+    const s = await db.collection('users').limit(1).get();
+    return s.empty;
+  } catch(e) {
+    console.warn('needsSetup error:', e.message);
+    return false; // Asumsikan sudah ada user → tampilkan login
+  }
 }
 async function setupSuperAdmin(nama, email, pw) {
+  // Cek lagi apakah sudah ada superadmin sebelum buat
+  const existing = await db.collection('users')
+    .where('role','==','superadmin').limit(1).get();
+  if (!existing.empty) {
+    throw { code: 'superadmin-exists', message: 'Superadmin sudah terdaftar.' };
+  }
   const c = await auth.createUserWithEmailAndPassword(email, pw);
   await db.collection('users').doc(c.user.uid).set({
     uid:c.user.uid, nama, email, role:'superadmin', active:true,
@@ -989,21 +1000,29 @@ service cloud.firestore {
     function isActive()     { return isAuth() && getU().active != false; }
 
     match /users/{uid} {
-      allow list: if true;
-      allow get:  if isAuth();
-      allow create, update: if isAdmin() || (!isAuth() && !exists(/databases/$(database)/documents/users/$(uid)));
+      // list tanpa login hanya untuk cek apakah setup diperlukan
+      allow list:   if true;
+      allow get:    if isAuth();
+      // create: saat setup awal (belum ada user) ATAU oleh admin
+      allow create: if isAdmin()
+                    || (!isAuth() && !exists(/databases/$(database)/documents/users/$(uid)));
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
     match /items/{id} {
-      allow read, write: if isActive();
+      allow read:   if isActive();
+      allow create: if isActive();
+      allow update: if isActive();
+      allow delete: if isActive();
     }
     match /history/{id} {
-      allow read, create: if isActive();
+      allow read:   if isActive();
+      allow create: if isActive();
       allow delete: if isSuperAdmin();
     }
     match /settings/{doc} {
-      allow read: if true;
-      allow write: if isSuperAdmin();
+      allow read:   if true;
+      allow write:  if isSuperAdmin();
     }
   }
 }</pre>
@@ -1129,14 +1148,31 @@ async function handleLogin(e) {
 async function handleSetup(e) {
   e.preventDefault();
   const err = document.getElementById('su-err');
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Membuat akun…';
   try {
     await setupSuperAdmin(
       document.getElementById('su-nama').value,
       document.getElementById('su-email').value,
       document.getElementById('su-pw').value
     );
-    toast('Super Admin dibuat! Silakan login.'); S.page='login'; render();
-  } catch(ex) { err.textContent=ex.message; err.style.display='block'; }
+    toast('Super Admin dibuat! Silakan login.');
+    S.page = 'login'; render();
+  } catch(ex) {
+    // Jika superadmin sudah ada ATAU email sudah terpakai → langsung ke login
+    if (ex.code === 'superadmin-exists' || ex.code === 'auth/email-already-in-use') {
+      toast('Akun Super Admin sudah terdaftar. Silakan login.', 'inf');
+      S.page = 'login'; render();
+      return;
+    }
+    const m = {
+      'auth/weak-password'  : 'Password minimal 6 karakter',
+      'auth/invalid-email'  : 'Format email tidak valid',
+    };
+    err.textContent = m[ex.code] || ex.message;
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Buat Akun Super Admin';
+  }
 }
 
 // ─ helper toggle ────────────────────────────────────────────
@@ -1201,12 +1237,24 @@ async function submitUser(e) {
 // ═══════════════════════════════════════════════════════════════
 async function loadDashboard() {
   try {
-    const [items, hist] = await Promise.all([dbItems(), dbHistory()]);
+    // Ambil items dan history secara terpisah agar salah satu gagal tidak blokir semua
+    let items = [], hist = [];
+    try { items = await dbItems(); } catch(e) {
+      console.error('items error:', e);
+      const errMsg = e.code === 'permission-denied'
+        ? '⚠️ Akses ditolak Firestore. Periksa Security Rules dan pastikan akun aktif.'
+        : '⚠️ Gagal memuat barang: ' + e.message;
+      const st = document.getElementById('stats');
+      if (st) st.innerHTML = `<div style="grid-column:1/-1;padding:14px;background:#FEF2F2;border-radius:10px;color:var(--danger);font-size:13px">${errMsg}</div>`;
+    }
+    try { hist = await dbHistory(); } catch(e) { console.error('history error:', e); }
+
     const total = items.length;
     const rusak = items.filter(i=>i.status==='rusak').length;
     const pinjam = items.filter(i=>i.peminjaman?.dipinjam).length;
     const rawat = items.filter(i=>i.jadwalPerawatan==='ada').length;
 
+    if (items.length > 0 || true) {
     document.getElementById('stats').innerHTML = [
       {ic:'📦', lbl:'Total Barang',       val:total,        col:'var(--primary)'},
       {ic:'✅', lbl:'Masih Digunakan',    val:total-rusak,   col:'var(--success)'},
@@ -1223,9 +1271,13 @@ async function loadDashboard() {
           <div style="font-size:28px">${s.ic}</div>
         </div>
       </div>`).join('');
+    }
+
+    } // end if items
 
     // Recent activity
     const rec = document.getElementById('recent');
+    if (!rec) return;
     if (!hist.length) { rec.innerHTML='<p style="color:var(--muted);font-size:13px">Belum ada aktivitas</p>'; }
     else rec.innerHTML = hist.slice(0,8).map(h=>`
       <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid var(--border)">
@@ -1733,28 +1785,44 @@ async function safeNeedsSetup() {
   }
 }
 
+// Flag agar auth listener tidak terpanggil ganda
+let _authHandled = false;
+
 auth.onAuthStateChanged(async (fbUser) => {
   // Muat tema terlebih dahulu (bisa diakses publik)
-  await dbLoadSettings();
+  try { await dbLoadSettings(); } catch(e) { /* tema default saja */ }
 
   if (fbUser) {
     try {
       const doc = await db.collection('users').doc(fbUser.uid).get();
       if (doc.exists && doc.data().active !== false) {
         S.user = { uid: fbUser.uid, ...doc.data() };
-        go('dashboard');
+        if (S.page === 'loading' || S.page === 'login' || S.page === 'setup') {
+          go('dashboard');
+        } else {
+          render(); // sudah di halaman lain, render ulang sidebar saja
+        }
       } else {
         await auth.signOut();
-        S.page = (await safeNeedsSetup()) ? 'setup' : 'login';
+        // Akun tidak aktif atau tidak ada di Firestore
+        toast('Akun tidak aktif atau tidak ditemukan.', 'err');
+        S.user = null;
+        S.page = 'login';
         render();
       }
     } catch(e) {
-      console.error('Auth error:', e.message);
+      console.error('Auth state error:', e.message);
+      if (e.code === 'permission-denied') {
+        // Mungkin rules belum dipublish — tetap tampilkan login
+        toast('Periksa Firestore Security Rules Anda.', 'err');
+      }
       S.page = 'login';
       render();
     }
   } else {
-    S.page = (await safeNeedsSetup()) ? 'setup' : 'login';
+    S.user = null;
+    const setup = await safeNeedsSetup();
+    S.page = setup ? 'setup' : 'login';
     render();
   }
 });
