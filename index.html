@@ -185,9 +185,30 @@ const FB_CONFIG = {
 };
 
 firebase.initializeApp(FB_CONFIG);
-const auth = firebase.auth();
+const auth = firebase.auth();  // hanya untuk anonymous sign-in (pengaman Firestore)
 const db   = firebase.firestore();
 const FS   = firebase.firestore;
+
+// ── Simple hash (cukup untuk app inventaris lokal) ──────────
+function simpleHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  }
+  return btoa(String(h + 2147483648));
+}
+
+// ── Session management via sessionStorage ───────────────────
+const SESSION_KEY = 'simba_session';
+function saveSession(user) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+}
+function loadSession() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch { return null; }
+}
+function clearSession() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  APP STATE
@@ -267,18 +288,63 @@ function go(page, params={}) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  AUTH
+//  AUTH – Firestore-based (tanpa Firebase Auth)
 // ═══════════════════════════════════════════════════════════════
-async function doLogin(email, pw) {
-  const c = await auth.signInWithEmailAndPassword(email, pw);
-  const ud = await db.collection('users').doc(c.user.uid).get();
-  if (!ud.exists) { await auth.signOut(); throw new Error('Akun tidak ditemukan di sistem'); }
-  if (ud.data().active === false) { await auth.signOut(); throw new Error('Akun nonaktif'); }
-  return ud.data();
+
+// Sign-in anonim ke Firebase Auth agar Firestore Rules terpenuhi
+// (Login user tetap pakai sistem username/password kustom kita)
+async function ensureFirebaseAuth() {
+  try {
+    if (!auth.currentUser) {
+      await auth.signInAnonymously();
+    }
+  } catch(e) {
+    console.warn('Anonymous auth gagal:', e.message,
+      '— Aktifkan Anonymous sign-in di Firebase Console → Authentication → Sign-in method');
+  }
+}
+
+// Inisialisasi default superadmin jika belum ada
+async function initDefaultAdmin() {
+  try {
+    const s = await db.collection('users').limit(1).get();
+    if (!s.empty) return; // sudah ada user
+    // Buat default superadmin
+    const defaultId = 'superadmin';
+    await db.collection('users').doc(defaultId).set({
+      uid: defaultId,
+      nama: 'Super Admin',
+      username: 'superadmin',
+      passwordHash: simpleHash('superadmin123'),
+      role: 'superadmin',
+      active: true,
+      createdAt: FS.FieldValue.serverTimestamp(),
+      createdBy: defaultId,
+      createdByName: 'System',
+    });
+    console.log('Default superadmin dibuat');
+  } catch(e) {
+    console.warn('initDefaultAdmin:', e.message);
+  }
+}
+
+async function doLogin(username, pw) {
+  const hash = simpleHash(pw);
+  // Cari user berdasarkan username
+  const snap = await db.collection('users')
+    .where('username', '==', username.trim().toLowerCase())
+    .limit(1).get();
+  if (snap.empty) throw new Error('Username tidak ditemukan');
+  const data = snap.docs[0].data();
+  if (data.active === false) throw new Error('Akun dinonaktifkan. Hubungi administrator.');
+  if (data.passwordHash !== hash) throw new Error('Password salah');
+  return { ...data, id: snap.docs[0].id };
 }
 
 async function doLogout() {
-  await auth.signOut(); S.user = null; render();
+  clearSession();
+  S.user = null;
+  render();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -319,28 +385,46 @@ async function dbUsers() {
   return s.docs.map(d=>({id:d.id,...d.data()}));
 }
 async function dbCreateUser(data) {
-  // Buat secondary app agar tidak logout user yg sedang aktif
-  const sec = firebase.initializeApp(FB_CONFIG, 'sec-'+Date.now());
-  const secAuth = sec.auth();
-  try {
-    const c = await secAuth.createUserWithEmailAndPassword(data.email, data.password);
-    await secAuth.signOut(); await sec.delete();
-    await db.collection('users').doc(c.user.uid).set({
-      uid:c.user.uid, nama:data.nama, email:data.email, role:data.role,
-      createdAt:FS.FieldValue.serverTimestamp(),
-      createdBy:S.user.uid, createdByName:S.user.nama, active:true,
-    });
-    return c.user.uid;
-  } catch(e) { await sec.delete(); throw e; }
-}
-async function dbUpdateUser(uid, data) {
-  await db.collection('users').doc(uid).update({
-    nama:data.nama, role:data.role, active:data.active,
-    updatedAt:FS.FieldValue.serverTimestamp(), updatedBy:S.user.uid,
+  // Cek username tidak duplikat
+  const chk = await db.collection('users')
+    .where('username','==',data.username.trim().toLowerCase()).limit(1).get();
+  if (!chk.empty) throw new Error('Username sudah digunakan');
+  const id = 'u_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
+  await db.collection('users').doc(id).set({
+    uid: id,
+    nama: data.nama,
+    username: data.username.trim().toLowerCase(),
+    passwordHash: simpleHash(data.password),
+    role: data.role,
+    active: true,
+    createdAt: FS.FieldValue.serverTimestamp(),
+    createdBy: S.user.uid,
+    createdByName: S.user.nama,
   });
+  return id;
 }
-async function dbDeleteUser(uid) {
-  await db.collection('users').doc(uid).delete();
+async function dbUpdateUser(id, data) {
+  const upd = {
+    nama: data.nama, role: data.role, active: data.active,
+    updatedAt: FS.FieldValue.serverTimestamp(), updatedBy: S.user.uid,
+  };
+  if (data.username) upd.username = data.username.trim().toLowerCase();
+  if (data.password) upd.passwordHash = simpleHash(data.password);
+  await db.collection('users').doc(id).update(upd);
+}
+async function dbDeleteUser(id) {
+  if (id === S.user.uid || id === S.user.id) throw new Error('Tidak bisa hapus akun sendiri');
+  await db.collection('users').doc(id).delete();
+}
+async function dbChangeMyPassword(oldPw, newPw) {
+  // Verifikasi password lama dulu
+  const doc = await db.collection('users').doc(S.user.id || S.user.uid).get();
+  if (!doc.exists) throw new Error('Akun tidak ditemukan');
+  if (doc.data().passwordHash !== simpleHash(oldPw)) throw new Error('Password lama salah');
+  await db.collection('users').doc(S.user.id || S.user.uid).update({
+    passwordHash: simpleHash(newPw),
+    updatedAt: FS.FieldValue.serverTimestamp(),
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -522,11 +606,7 @@ async function doReset() {
 function render() {
   const app = document.getElementById('app');
   if (S.page === 'login') {
-    app.innerHTML = tplLogin(); bindLogin();
-  } else if (S.page === 'setup') {
-    app.innerHTML = tplSetup(); bindSetup();
-  } else if (S.page === 'repair') {
-    app.innerHTML = tplRepair(); 
+    app.innerHTML = tplLogin(); 
   } else {
     app.innerHTML = `<div style="display:flex">${tplSidebar()}<div class="main" style="flex:1;min-width:0;">${tplPage()}</div></div>`;
     bindPage();
@@ -883,13 +963,12 @@ function tplFormPengguna() {
         <div class="fgrp"><label class="lbl">Nama Lengkap *</label>
           <input class="inp" name="nama" value="${u?.nama||''}" required>
         </div>
-        ${!ed?`
-        <div class="fgrp"><label class="lbl">Email *</label>
-          <input class="inp" type="email" name="email" required>
+        <div class="fgrp"><label class="lbl">Username * ${ed?'<span style="color:var(--muted);font-weight:400">(kosongkan jika tidak diubah)</span>':''}</label>
+          <input class="inp" name="username" value="${u?.username||''}" ${!ed?'required':''} placeholder="Hanya huruf kecil & angka" autocomplete="off">
         </div>
-        <div class="fgrp"><label class="lbl">Password *</label>
-          <input class="inp" type="password" name="password" required minlength="6" placeholder="Minimal 6 karakter">
-        </div>`:''}
+        <div class="fgrp"><label class="lbl">Password ${ed?'<span style="color:var(--muted);font-weight:400">(kosongkan jika tidak diubah)</span>':'*'}</label>
+          <input class="inp" type="password" name="password" ${!ed?'required':''} minlength="6" placeholder="${ed?'Kosongkan jika tidak diubah':'Minimal 6 karakter'}" autocomplete="new-password">
+        </div>
         <div class="fgrp"><label class="lbl">Role *</label>
           <select class="inp" name="role" required>
             ${roles.map(([v,l])=>`<option value="${v}" ${u?.role===v?'selected':''}>${l}</option>`).join('')}
@@ -1005,6 +1084,28 @@ function tplPengaturan() {
     </div>
   </div>
 
+  <!-- ══ UBAH PASSWORD SENDIRI ══ -->
+  <div class="card" style="margin-bottom:20px">
+    <h3 style="font-size:15px;font-weight:700;color:var(--primary);margin-bottom:14px">🔐 Ubah Password Saya</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;max-width:700px">
+      <div class="fgrp">
+        <label class="lbl">Password Lama</label>
+        <input class="inp" type="password" id="cp-old" placeholder="Password saat ini" autocomplete="current-password">
+      </div>
+      <div class="fgrp">
+        <label class="lbl">Password Baru</label>
+        <input class="inp" type="password" id="cp-new" placeholder="Min. 6 karakter" autocomplete="new-password">
+      </div>
+      <div class="fgrp">
+        <label class="lbl">Konfirmasi Password</label>
+        <input class="inp" type="password" id="cp-confirm" placeholder="Ulangi password baru" autocomplete="new-password">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary" onclick="ubahPassword()">🔐 Simpan Password Baru</button>
+    </div>
+  </div>
+
   <!-- ══ BACKUP & RESTORE ══ -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px">
     <div class="card">
@@ -1036,36 +1137,10 @@ function tplPengaturan() {
     <pre style="background:#1B4332;color:#86EFAC;padding:14px;border-radius:10px;font-size:11.5px;overflow-x:auto;line-height:1.6">rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAuth()       { return request.auth != null; }
-    function getU()         { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function isSuperAdmin() { return isAuth() && getU().role == 'superadmin'; }
-    function isAdmin()      { return isAuth() && getU().role in ['superadmin','admin']; }
-    function isActive()     { return isAuth() && getU().active != false; }
-
-    match /users/{uid} {
-      // list tanpa login hanya untuk cek apakah setup diperlukan
-      allow list:   if true;
-      allow get:    if isAuth();
-      // create: saat setup awal (belum ada user) ATAU oleh admin
-      allow create: if isAdmin()
-                    || (!isAuth() && !exists(/databases/$(database)/documents/users/$(uid)));
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
-    }
-    match /items/{id} {
-      allow read:   if isActive();
-      allow create: if isActive();
-      allow update: if isActive();
-      allow delete: if isActive();
-    }
-    match /history/{id} {
-      allow read:   if isActive();
-      allow create: if isActive();
-      allow delete: if isSuperAdmin();
-    }
-    match /settings/{doc} {
-      allow read:   if true;
-      allow write:  if isSuperAdmin();
+    // Hanya browser yang sudah sign-in (termasuk anonymous) yang bisa akses.
+    // Login user dikelola aplikasi SIMBA sendiri (username/password di Firestore).
+    match /{document=**} {
+      allow read, write: if request.auth != null;
     }
   }
 }</pre>
@@ -1163,36 +1238,42 @@ async function handleRepair(e) {
   }
 }
 
-async function repairLogout() {
-  S._repairUser = null;
-  await auth.signOut();
-  S.user = null; S.page = 'login'; render();
+function repairLogout() {
+  clearSession(); S.user = null; S.page = 'login'; render();
 }
 
 // ── LOGIN ──────────────────────────────────────────────────────
 function tplLogin() {
   const lg = `linear-gradient(150deg,${darken(S.theme.colorPrimary,20)} 0%,${S.theme.colorPrimary} 45%,${lighten(S.theme.colorPrimary,25)} 100%)`;
   return `
-  <div class="login-wrap" style="background:${lg}">
+  <div class="login-wrap" style="background:${lg};min-height:100vh">
     <div style="text-align:center;width:100%;max-width:400px;padding:20px">
       <div style="margin-bottom:6px">${logoHtml('56px',true)}</div>
       <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
-      <div style="color:rgba(255,255,255,.45);font-size:10.5px;letter-spacing:2px;margin-bottom:30px">${S.theme.appSubtitle}</div>
-      <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:30px">
-        <form id="frm-login" onsubmit="handleLogin(event)">
-          <div class="fgrp" style="text-align:left">
-            <label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Email</label>
-            <input class="inp" type="email" id="l-email" placeholder="nama@email.com" required>
+      <div style="color:rgba(255,255,255,.45);font-size:10.5px;letter-spacing:2px;margin-bottom:28px">${S.theme.appSubtitle}</div>
+      <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:28px">
+        <form onsubmit="handleLogin(event)">
+          <div class="fgrp" style="text-align:left;margin-bottom:14px">
+            <label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Username</label>
+            <input class="inp" id="l-user" placeholder="Username" required autocomplete="username">
           </div>
-          <div class="fgrp" style="text-align:left">
+          <div class="fgrp" style="text-align:left;margin-bottom:6px">
             <label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Password</label>
-            <input class="inp" type="password" id="l-pw" placeholder="••••••••" required>
+            <input class="inp" type="password" id="l-pw" placeholder="••••••••" required autocomplete="current-password">
           </div>
-          <button type="submit" class="btn btn-accent" id="l-btn" style="width:100%;padding:11px;font-size:14.5px;margin-top:6px">Masuk ke ${S.theme.appTitle}</button>
+          <button type="submit" class="btn btn-accent" id="l-btn" style="width:100%;padding:11px;font-size:14.5px;margin-top:10px">
+            Masuk ke ${S.theme.appTitle}
+          </button>
           <div id="l-err" style="color:#fca5a5;font-size:13px;margin-top:10px;display:none"></div>
         </form>
       </div>
-      <div style="color:rgba(255,255,255,.25);font-size:11px;margin-top:16px">${S.theme.appTitle} v1.0 © ${new Date().getFullYear()}</div>
+      <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px;margin-top:14px;text-align:left">
+        <div style="color:rgba(255,255,255,.5);font-size:11px;font-weight:600;margin-bottom:4px">🔑 Default Login</div>
+        <div style="color:rgba(255,255,255,.65);font-size:12px">Username: <strong style="color:var(--accent)">superadmin</strong></div>
+        <div style="color:rgba(255,255,255,.65);font-size:12px">Password: <strong style="color:var(--accent)">superadmin123</strong></div>
+        <div style="color:rgba(255,255,255,.35);font-size:10.5px;margin-top:4px">Ganti password setelah masuk pertama kali</div>
+      </div>
+      <div style="color:rgba(255,255,255,.2);font-size:11px;margin-top:14px">${S.theme.appTitle} v2.0 © ${new Date().getFullYear()}</div>
     </div>
   </div>`;
 }
@@ -1249,19 +1330,16 @@ async function handleLogin(e) {
   btn.innerHTML = '<span class="spin"></span> Masuk…'; btn.disabled = true;
   err.style.display = 'none';
   try {
-    S.user = await doLogin(document.getElementById('l-email').value, document.getElementById('l-pw').value);
+    const username = document.getElementById('l-user').value.trim();
+    const pw       = document.getElementById('l-pw').value;
+    S.user = await doLogin(username, pw);
+    saveSession(S.user);
     go('dashboard');
   } catch(ex) {
-    const m = {
-      'auth/user-not-found':'Email tidak terdaftar',
-      'auth/wrong-password':'Password salah',
-      'auth/invalid-email':'Format email tidak valid',
-      'auth/too-many-requests':'Terlalu banyak percobaan, tunggu sebentar',
-      'auth/invalid-credential':'Email atau password salah',
-    };
-    err.textContent = m[ex.code] || ex.message;
+    err.textContent = ex.message || 'Login gagal';
     err.style.display = 'block';
-    btn.innerHTML = 'Masuk ke ' + S.theme.appTitle; btn.disabled = false;
+    btn.innerHTML = 'Masuk ke ' + S.theme.appTitle;
+    btn.disabled = false;
   }
 }
 
@@ -1347,18 +1425,23 @@ async function submitUser(e) {
   const f = e.target;
   try {
     if (S.udata) {
-      await dbUpdateUser(S.udata.uid||S.udata.id, {
-        nama:f.nama.value.trim(), role:f.role.value, active:f.active?.value==='true',
-      });
+      const upd = { nama:f.nama.value.trim(), role:f.role.value, active:f.active?.value==='true' };
+      if (f.username?.value.trim()) upd.username = f.username.value.trim();
+      if (f.password?.value)        upd.password = f.password.value;
+      await dbUpdateUser(S.udata.uid||S.udata.id, upd);
       toast('Pengguna diperbarui!');
     } else {
-      await dbCreateUser({nama:f.nama.value.trim(),email:f.email.value.trim(),password:f.password.value,role:f.role.value});
+      await dbCreateUser({
+        nama: f.nama.value.trim(),
+        username: f.username.value.trim(),
+        password: f.password.value,
+        role: f.role.value,
+      });
       toast('Pengguna ditambahkan!');
     }
     go('pengguna');
   } catch(ex) {
-    const m={'auth/email-already-in-use':'Email sudah digunakan','auth/weak-password':'Password terlalu lemah'};
-    toast(m[ex.code]||ex.message,'err');
+    toast(ex.message || 'Gagal simpan pengguna', 'err');
   }
 }
 
@@ -1744,19 +1827,19 @@ async function loadUsers() {
     if (!users.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada pengguna</p>'; return; }
     el.innerHTML = `
       <table class="tbl">
-        <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Dibuat</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Nama</th><th>Username</th><th>Role</th><th>Status</th><th>Dibuat</th><th>Aksi</th></tr></thead>
         <tbody>
         ${users.map(u=>`<tr>
-          <td style="font-weight:500">${u.nama} ${u.uid===S.user?.uid?'<span class="bdg bdg-b" style="font-size:10px">Anda</span>':''}</td>
-          <td style="font-size:12.5px;color:var(--muted)">${u.email||'–'}</td>
+          <td style="font-weight:500">${u.nama} ${(u.uid===S.user?.uid||u.id===S.user?.id)?'<span class="bdg bdg-b" style="font-size:10px">Anda</span>':''}</td>
+          <td style="font-size:12.5px;color:var(--muted);font-family:monospace">${u.username||'–'}</td>
           <td><span class="bdg bdg-p">${roleLabel(u.role)}</span></td>
           <td><span class="bdg ${u.active!==false?'bdg-g':'bdg-r'}">${u.active!==false?'Aktif':'Nonaktif'}</span></td>
           <td style="font-size:12px">${fmt.date(u.createdAt)}</td>
           <td>
-            ${u.uid!==S.user?.uid?`
+            ${(u.uid!==S.user?.uid&&u.id!==S.user?.id)?`
               <div style="display:flex;gap:5px">
                 <button class="act-btn act-edit" onclick="editUser('${u.id||u.uid}')">Edit</button>
-                <button class="act-btn act-del" onclick="delUser('${u.uid||u.id}','${u.nama.replace(/'/g,"\\'")}')">Hapus</button>
+                <button class="act-btn act-del" onclick="delUser('${u.id||u.uid}','${u.nama.replace(/'/g,"\\'") }')">Hapus</button>
               </div>`:'–'}
           </td>
         </tr>`).join('')}
@@ -1767,12 +1850,12 @@ async function loadUsers() {
 
 async function editUser(id) {
   const d = await db.collection('users').doc(id).get();
-  if (d.exists) go('form-pengguna', {udata:{id:d.id,...d.data()}});
+  if (d.exists) go('form-pengguna', {udata:{id:d.id, uid:d.id, ...d.data()}});
 }
 
-function delUser(uid, nama) {
+function delUser(id, nama) {
   if (!confirm(`Hapus pengguna "${nama}"?`)) return;
-  dbDeleteUser(uid).then(()=>{ toast('Pengguna dihapus'); loadUsers(); }).catch(e=>toast(e.message,'err'));
+  dbDeleteUser(id).then(()=>{ toast('Pengguna dihapus'); loadUsers(); }).catch(e=>toast(e.message,'err'));
 }
 
 // ── PENGATURAN HANDLERS ───────────────────────────────────────
@@ -1933,65 +2016,55 @@ async function resetTema() {
   } catch(e) { toast('Gagal reset: ' + e.message, 'err'); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  AUTH STATE LISTENER – INIT
-// ═══════════════════════════════════════════════════════════════
-async function safeNeedsSetup() {
+// ── Ubah Password ────────────────────────────────────────────
+async function ubahPassword() {
+  const oldPw   = document.getElementById('cp-old')?.value;
+  const newPw   = document.getElementById('cp-new')?.value;
+  const confirm = document.getElementById('cp-confirm')?.value;
+  if (!oldPw || !newPw || !confirm) { toast('Isi semua kolom password', 'err'); return; }
+  if (newPw.length < 6) { toast('Password baru minimal 6 karakter', 'err'); return; }
+  if (newPw !== confirm) { toast('Konfirmasi password tidak cocok', 'err'); return; }
   try {
-    return await needsSetup();
-  } catch(e) {
-    // Jika rules memblok, asumsikan sudah ada user → tampilkan login
-    console.warn('Setup check blocked by rules, showing login:', e.message);
-    return false;
-  }
+    await dbChangeMyPassword(oldPw, newPw);
+    // Update session
+    S.user.passwordHash = simpleHash(newPw);
+    saveSession(S.user);
+    toast('✓ Password berhasil diubah!');
+    document.getElementById('cp-old').value = '';
+    document.getElementById('cp-new').value = '';
+    document.getElementById('cp-confirm').value = '';
+  } catch(e) { toast(e.message, 'err'); }
 }
 
-// Flag agar auth listener tidak terpanggil ganda
-let _authHandled = false;
+// ═══════════════════════════════════════════════════════════════
+//  INIT APP – session-based (tanpa Firebase Auth)
+// ═══════════════════════════════════════════════════════════════
+async function initApp() {
+  // 0. Dapatkan tiket akses Firebase Auth (anonymous) agar Firestore tidak ditolak
+  await ensureFirebaseAuth();
 
-auth.onAuthStateChanged(async (fbUser) => {
-  // Muat tema terlebih dahulu (bisa diakses publik)
-  try { await dbLoadSettings(); } catch(e) { /* tema default saja */ }
+  try { await dbLoadSettings(); } catch(e) { /* tema default */ }
+  await initDefaultAdmin();
 
-  if (fbUser) {
+  const sess = loadSession();
+  if (sess && (sess.id || sess.uid)) {
     try {
-      const doc = await db.collection('users').doc(fbUser.uid).get();
+      const uid = sess.id || sess.uid;
+      const doc  = await db.collection('users').doc(uid).get();
       if (doc.exists && doc.data().active !== false) {
-        S.user = { uid: fbUser.uid, ...doc.data() };
-        if (S.page === 'loading' || S.page === 'login' || S.page === 'setup' || S.page === 'repair') {
-          go('dashboard');
-        } else {
-          render();
-        }
-      } else if (!doc.exists) {
-        // Auth ada tapi Firestore tidak ada → kemungkinan setup terganggu
-        S._repairUser = fbUser;
-        S.page = 'repair';
-        render();
-      } else {
-        // Akun nonaktif
-        await auth.signOut();
-        toast('Akun Anda dinonaktifkan. Hubungi administrator.', 'err');
-        S.user = null;
-        S.page = 'login';
-        render();
+        S.user = { id: doc.id, uid: doc.id, ...doc.data() };
+        saveSession(S.user);
+        go('dashboard');
+        return;
       }
-    } catch(e) {
-      console.error('Auth state error:', e.message);
-      if (e.code === 'permission-denied') {
-        // Mungkin rules belum dipublish — tetap tampilkan login
-        toast('Periksa Firestore Security Rules Anda.', 'err');
-      }
-      S.page = 'login';
-      render();
-    }
-  } else {
-    S.user = null;
-    const setup = await safeNeedsSetup();
-    S.page = setup ? 'setup' : 'login';
-    render();
+    } catch(e) { console.warn('Session restore:', e.message); }
+    clearSession();
   }
-});
+  S.page = 'login';
+  render();
+}
+
+initApp();
 </script>
 </body>
 </html>
