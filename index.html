@@ -292,15 +292,20 @@ function go(page, params={}) {
 // ═══════════════════════════════════════════════════════════════
 
 // Sign-in anonim ke Firebase Auth agar Firestore Rules terpenuhi
-// (Login user tetap pakai sistem username/password kustom kita)
 async function ensureFirebaseAuth() {
   try {
     if (!auth.currentUser) {
       await auth.signInAnonymously();
+      S._anonAuthOk = true;
+      console.log('Anonymous auth OK');
+    } else {
+      S._anonAuthOk = true;
     }
   } catch(e) {
-    console.warn('Anonymous auth gagal:', e.message,
-      '— Aktifkan Anonymous sign-in di Firebase Console → Authentication → Sign-in method');
+    S._anonAuthOk = false;
+    console.warn('Anonymous auth gagal (belum diaktifkan?):', e.code);
+    // Fallback: coba lanjut tanpa anonymous auth
+    // Firestore Rules harus "if true" agar tetap bisa akses
   }
 }
 
@@ -344,7 +349,9 @@ async function doLogin(username, pw) {
 async function doLogout() {
   clearSession();
   S.user = null;
-  render();
+  S.page = 'login';
+  // Paksa reload halaman agar semua state bersih dan kembali ke login
+  window.location.reload();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2058,8 +2065,11 @@ async function initApp() {
         return;
       }
     } catch(e) { console.warn('Session restore:', e.message); }
+    // Session tidak valid → hapus dan tampilkan login
     clearSession();
   }
+  // Pastikan page = login sebelum render
+  S.user = null;
   S.page = 'login';
   render();
 }
