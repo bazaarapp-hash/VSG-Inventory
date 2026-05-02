@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SIMBA – Sistem Inventaris Tempat Ibadah</title>
+  <title>SIV – Sistem Inventaris Vihara</title>
 
   <!-- Firebase SDK v9 compat -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -128,14 +128,44 @@
 
     /* ── PAGE HEADER ── */
     .ph { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; flex-wrap: wrap; gap: 10px; }
-    .ph h1 { font-size: 20px; color: var(--primary); line-height: 1.2; }
+    .ph h1 { font-size: 26px; color: var(--primary); line-height: 1.2; }
     .ph p { font-size: 13px; color: var(--muted); margin-top: 3px; }
 
     /* ── MOBILE ── */
-    @media(max-width:768px) {
-      .sidebar { transform: translateX(-100%); }
-      .sidebar.open { transform: translateX(0); }
-      .main { margin-left: 0; padding: 16px; }
+    /* ── MOBILE RESPONSIVE ── */
+    @media(max-width:768px){
+      .sidebar{transform:translateX(-100%);z-index:200;box-shadow:4px 0 24px rgba(0,0,0,.3)}
+      .sidebar.open{transform:translateX(0)}
+      .main{margin-left:0!important;padding:12px 10px 80px}
+      .sb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199;display:none}
+      .sb-overlay.show{display:block}
+      .topbar{padding:10px 14px}
+      .topbar h2{font-size:15px}
+      .grid4{grid-template-columns:repeat(2,1fr)!important}
+      .grid2{grid-template-columns:1fr!important}
+      .tbl{font-size:11.5px}
+      .tbl th,.tbl td{padding:7px 8px}
+      .card{padding:14px 12px}
+      .ph{flex-direction:column;align-items:flex-start}
+      .ph h1{font-size:19px}
+      .fbar{flex-direction:column}
+      .fbar>div{width:100%}
+      .fbar>.inp{width:100%!important}
+      .modal-box,.mbox{max-width:100%!important;margin:0;border-radius:14px 14px 0 0;max-height:95vh}
+      .overlay{align-items:flex-end;padding:0}
+    }
+    /* Hamburger button */
+    .ham-btn{display:none;position:fixed;top:12px;left:12px;z-index:300;background:var(--primary);border:none;border-radius:9px;width:40px;height:40px;cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:5px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+    .ham-btn span{display:block;width:20px;height:2px;background:#fff;border-radius:2px;transition:all .2s}
+    @media(max-width:768px){.ham-btn{display:flex}}
+    /* Bottom nav mobile */
+    .bot-nav{display:none}
+    @media(max-width:768px){
+      .bot-nav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--primary);border-top:1px solid rgba(255,255,255,.1);z-index:100;padding:6px 0 env(safe-area-inset-bottom,6px)}
+      .bot-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;padding:4px 2px;opacity:.6;transition:opacity .15s;border:none;background:transparent;color:#fff;font-family:inherit}
+      .bot-nav-item.active{opacity:1}
+      .bot-nav-item .bni{font-size:18px}
+      .bot-nav-item .bnl{font-size:9px;font-weight:600;letter-spacing:.3px}
     }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -214,11 +244,16 @@ function clearSession() {
 //  APP STATE
 // ═══════════════════════════════════════════════════════════════
 const S = {
-  user   : null,
-  page   : 'loading',
-  item   : null,
-  udata  : null,
-  lapTab : 0,
+  user         : null,
+  page         : 'loading',
+  item         : null,
+  udata        : null,
+  lapTab       : 0,
+  _notifCount  : 0,
+  _masterJenis : [],
+  _masterLokasi: [],
+  _anonAuthOk  : false,
+  _repairUser  : null,
   theme  : {
     appTitle    : 'SIMBA',
     appSubtitle : 'SISTEM INVENTARIS IBADAH',
@@ -382,6 +417,54 @@ async function dbUpdateItem(id, old, data) {
 async function dbDeleteItem(id, item) {
   await db.collection('items').doc(id).delete();
   await dbLog(id, item.kode, item.nama, 'hapus', item, {});
+}
+
+// ─── MASTER JENIS ──────────────────────────────────────────────
+async function dbGetJenis() {
+  try {
+    const s = await db.collection('master').doc('jenis').get();
+    return s.exists ? (s.data().list || []) : ['Perlengkapan Ibadah','Elektronik','Furnitur','Peralatan','Lainnya'];
+  } catch(e) { return ['Perlengkapan Ibadah','Elektronik','Furnitur','Peralatan','Lainnya']; }
+}
+async function dbSaveJenis(list) {
+  await db.collection('master').doc('jenis').set({ list });
+  S._masterJenis = list;
+}
+// ─── MASTER LOKASI ─────────────────────────────────────────────
+async function dbGetLokasi() {
+  try {
+    const s = await db.collection('master').doc('lokasi').get();
+    return s.exists ? (s.data().list || []) : ['Ruang Utama','Ruang Kajian','Gudang','Selasar','Lainnya'];
+  } catch(e) { return ['Ruang Utama','Ruang Kajian','Gudang','Selasar','Lainnya']; }
+}
+async function dbSaveLokasi(list) {
+  await db.collection('master').doc('lokasi').set({ list });
+  S._masterLokasi = list;
+}
+// ─── PEMINJAMAN: multi-entry per item ──────────────────────────
+// peminjaman disimpan sebagai array [{nama, jumlah, tgl}]
+async function dbTambahPinjam(itemId, nama, jumlah) {
+  const item = await dbItem(itemId);
+  if (!item) throw new Error('Barang tidak ditemukan');
+  const pinjamList = item.pinjamList || [];
+  const totalPinjam = pinjamList.reduce((s,p)=>s+p.jumlah,0);
+  const stok = item.jumlah - totalPinjam;
+  if (jumlah > stok) throw new Error(`Stok tersedia hanya ${stok}`);
+  pinjamList.push({ nama: nama.trim(), jumlah, tgl: new Date().toISOString().slice(0,10), id: 'p'+Date.now() });
+  const now = FS.FieldValue.serverTimestamp();
+  await db.collection('items').doc(itemId).update({
+    pinjamList, updatedAt:now, updatedBy:S.user.uid, updatedByName:S.user.nama
+  });
+  await dbLog(itemId, item.kode, item.nama, 'pinjam', {}, { nama, jumlah });
+}
+async function dbKembalikanPinjam(itemId, pinjamId) {
+  const item = await dbItem(itemId);
+  const pinjamList = (item.pinjamList||[]).filter(p=>p.id!==pinjamId);
+  const now = FS.FieldValue.serverTimestamp();
+  await db.collection('items').doc(itemId).update({
+    pinjamList, updatedAt:now, updatedBy:S.user.uid, updatedByName:S.user.nama
+  });
+  await dbLog(itemId, item.kode, item.nama, 'kembali', {}, { pinjamId });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -615,7 +698,38 @@ function render() {
   if (S.page === 'login') {
     app.innerHTML = tplLogin(); 
   } else {
-    app.innerHTML = `<div style="display:flex">${tplSidebar()}<div class="main" style="flex:1;min-width:0;">${tplPage()}</div></div>`;
+    const r = S.user?.role;
+    const botNavs = [
+      {id:'dashboard',ic:'⊞',lbl:'Beranda'},
+      {id:'barang',ic:'📦',lbl:'Barang'},
+      {id:'cari',ic:'🔍',lbl:'Cari'},
+      {id:'notifikasi',ic:'🔔',lbl:'Notif'},
+      ...((['superadmin','admin'].includes(r))?[{id:'laporan',ic:'📊',lbl:'Laporan'}]:[]),
+    ];
+    app.innerHTML = `
+      <button class="ham-btn" id="ham-btn" onclick="toggleSidebar()">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="sb-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
+      ${tplSidebar()}
+      <div class="main" style="flex:1;min-width:0;margin-left:256px">
+        <div class="topbar" style="padding-left:60px">
+          <h2>${pageTitles[S.page]||'SIMBA'}</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${S.page==='barang'?'<button class="btn ba" onclick="openAddItem()">+ Tambah Barang</button>':''}
+            ${S.page==='pengguna'?`<button class="btn ba" onclick="go('form-pengguna')">+ Tambah Pengguna</button>`:''}
+            <button onclick="go('notifikasi')" style="position:relative;background:transparent;border:none;cursor:pointer;font-size:20px;padding:4px">
+              🔔${S._notifCount>0?`<span style="position:absolute;top:0;right:0;background:#DC2626;color:#fff;border-radius:9px;font-size:9px;font-weight:700;padding:1px 5px;min-width:16px;text-align:center">${S._notifCount}</span>`:''}
+            </button>
+          </div>
+        </div>
+        <div class="content">${tplPage()}</div>
+      </div>
+      <nav class="bot-nav">
+        ${botNavs.map(n=>`<button class="bot-nav-item ${S.page===n.id?'active':''}" onclick="go('${n.id}');closeSidebar()">
+          <span class="bni">${n.ic}</span><span class="bnl">${n.lbl}</span>
+        </button>`).join('')}
+      </nav>`;
     bindPage();
   }
 }
@@ -625,21 +739,25 @@ function render() {
 // ═══════════════════════════════════════════════════════════════
 function tplSidebar() {
   const r = S.user?.role, p = S.page;
+  const notifBadge = S._notifCount>0?` <span style="background:#DC2626;color:#fff;border-radius:9px;font-size:9px;padding:1px 6px;font-weight:700">${S._notifCount}</span>`:'';
   const navs = [
-    {id:'dashboard', ic:'⊞',  lbl:'Dashboard',          roles:['superadmin','admin','manager']},
-    {id:'barang',    ic:'📦', lbl:'Data Barang',         roles:['superadmin','admin','manager']},
-    {id:'cari',      ic:'🔍', lbl:'Pencarian',           roles:['superadmin','admin','manager']},
-    {id:'riwayat',   ic:'📋', lbl:'Riwayat Aktivitas',   roles:['superadmin','admin','manager']},
-    {id:'laporan',   ic:'📊', lbl:'Laporan',             roles:['superadmin','admin']},
-    {id:'pengguna',  ic:'👥', lbl:'Manajemen Pengguna',  roles:['superadmin','admin']},
-    {id:'pengaturan',ic:'⚙️', lbl:'Pengaturan & Backup', roles:['superadmin']},
+    {id:'dashboard',    ic:'⊞',  lbl:'Dashboard',           roles:['superadmin','admin','manager']},
+    {id:'barang',       ic:'📦', lbl:'Data Barang',          roles:['superadmin','admin','manager']},
+    {id:'cari',         ic:'🔍', lbl:'Pencarian',            roles:['superadmin','admin','manager']},
+    {id:'notifikasi',   ic:'🔔', lbl:'Notifikasi'+notifBadge,roles:['superadmin','admin','manager']},
+    {id:'riwayat',      ic:'📋', lbl:'Riwayat Aktivitas',    roles:['superadmin','admin','manager']},
+    {id:'laporan',      ic:'📊', lbl:'Laporan',              roles:['superadmin','admin']},
+    {id:'master-jenis', ic:'🏷️', lbl:'Master Jenis',         roles:['superadmin','admin']},
+    {id:'master-lokasi',ic:'📍', lbl:'Master Lokasi',        roles:['superadmin','admin']},
+    {id:'pengguna',     ic:'👥', lbl:'Pengguna',             roles:['superadmin','admin']},
+    {id:'pengaturan',   ic:'⚙️', lbl:'Pengaturan & Backup',  roles:['superadmin']},
   ].filter(n=>n.roles.includes(r));
 
   return `
   <div class="sidebar" id="sidebar">
     <div style="padding:22px 16px 12px;text-align:center;">
       ${logoHtml('36px', true)}
-      <div class="ff" style="color:var(--accent);font-size:20px;font-weight:700;line-height:1;margin-top:4px">${S.theme.appTitle}</div>
+      <div class="ff" style="color:var(--accent);font-size:26px;font-weight:700;line-height:1;margin-top:4px">${S.theme.appTitle}</div>
       <div style="color:rgba(255,255,255,.4);font-size:9px;letter-spacing:1.5px;margin-top:2px">${S.theme.appSubtitle}</div>
       <div style="height:1px;background:rgba(255,255,255,.1);margin:14px 0"></div>
     </div>
@@ -661,6 +779,19 @@ function tplSidebar() {
 // ═══════════════════════════════════════════════════════════════
 //  PAGES
 // ═══════════════════════════════════════════════════════════════
+function toggleSidebar() {
+  const sb  = document.getElementById('sidebar');
+  const ov  = document.getElementById('sb-overlay');
+  if (sb)  sb.classList.toggle('open');
+  if (ov)  ov.classList.toggle('show');
+}
+function closeSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sb-overlay');
+  if (sb)  sb.classList.remove('open');
+  if (ov)  ov.classList.remove('show');
+}
+
 function tplPage() {
   switch(S.page) {
     case 'dashboard':    return tplDashboard();
@@ -672,6 +803,9 @@ function tplPage() {
     case 'pengguna':     return tplPengguna();
     case 'form-pengguna':return tplFormPengguna();
     case 'pengaturan':   return tplPengaturan();
+    case 'notifikasi':   return tplNotifikasi();
+    case 'master-jenis': return tplMasterJenis();
+    case 'master-lokasi':return tplMasterLokasi();
     default:             return tplDashboard();
   }
 }
@@ -743,19 +877,28 @@ function tplBarang() {
   <div class="card" style="overflow-x:auto"><div id="items-tbl">Memuat…</div></div>`;
 }
 
-const JENIS_LIST = ['Perlengkapan Ibadah','Peralatan','Furnitur','Elektronik','Lainnya'];
+// Jenis & Lokasi dimuat dari Firestore (fallback default)
+let JENIS_LIST = ['Perlengkapan Ibadah','Elektronik','Furnitur','Peralatan','Lainnya'];
+let LOKASI_LIST = ['Ruang Utama','Ruang Kajian','Gudang','Selasar','Lainnya'];
 
 // ── FORM BARANG ────────────────────────────────────────────────
 function tplFormBarang() {
   const it = S.item, ed = !!it;
-  const v = (k,d='') => it?.[k]??d;
-  const vp = (k,d='') => it?.peminjaman?.[k]??d;
-  const sel = (a,b) => a===b?'selected':'';
-  const chk = (a,b) => a===b?'checked':'';
+  const v  = (k,d='') => it?.[k]??d;
+  const sel= (a,b) => a===b?'selected':'';
+  const chk= (a,b) => a===b?'checked':'';
+  const jenisList  = (S._masterJenis.length  ? S._masterJenis  : JENIS_LIST);
+  const lokasiList = (S._masterLokasi.length ? S._masterLokasi : LOKASI_LIST);
+  const bisDipinjam = v('bisaDipinjam', true);
+  const pinjamList  = it?.pinjamList || [];
+  const totalPinjam = pinjamList.reduce((s,p)=>s+p.jumlah,0);
+  const stokTersedia = Math.max(0,(v('jumlah',1)*1) - totalPinjam);
+
   return `
-  <div style="max-width:780px">
+  <div style="max-width:820px">
     <div class="ph">
-      <div><h1 class="ff">${ed?'Edit Barang':'Tambah Barang'}</h1><p>${ed?'Ubah data barang yang ada':'Input barang baru ke inventaris'}</p></div>
+      <div><h1 class="ff">${ed?'Edit Barang':'Tambah Barang Baru'}</h1>
+      <p>${ed?'Ubah data barang yang ada':'Input barang baru ke inventaris'}</p></div>
       <button class="btn btn-outline" onclick="go('barang')">← Kembali</button>
     </div>
     <div class="card">
@@ -773,11 +916,11 @@ function tplFormBarang() {
             <label class="lbl">Jenis *</label>
             <select class="inp" name="jenis" required>
               <option value="">Pilih jenis…</option>
-              ${JENIS_LIST.map(j=>`<option ${sel(v('jenis'),j)}>${j}</option>`).join('')}
+              ${jenisList.map(j=>`<option ${sel(v('jenis'),j)}>${j}</option>`).join('')}
             </select>
           </div>
           <div class="fgrp">
-            <label class="lbl">Jumlah *</label>
+            <label class="lbl">Jumlah Total *</label>
             <input class="inp" type="number" name="jumlah" value="${v('jumlah',1)}" min="0" required>
           </div>
           <div class="fgrp">
@@ -790,21 +933,30 @@ function tplFormBarang() {
           </div>
           <div class="fgrp" style="grid-column:1/-1">
             <label class="lbl">Lokasi Penempatan</label>
-            <input class="inp" name="lokasi" value="${v('lokasi')}" placeholder="Contoh: Ruang Utama, Gudang, Selasar…">
+            <select class="inp" name="lokasi" onchange="onLokasiChange(this)">
+              <option value="">Pilih lokasi…</option>
+              ${lokasiList.map(l=>`<option ${sel(v('lokasi'),l)}>${l}</option>`).join('')}
+              <option value="__lainnya" ${!lokasiList.includes(v('lokasi'))&&v('lokasi')?'selected':''}>Lainnya (ketik manual)</option>
+            </select>
+            <input class="inp" id="lokasi-manual" name="lokasiManual" value="${!lokasiList.includes(v('lokasi'))?v('lokasi'):''}"
+              style="margin-top:6px;${!lokasiList.includes(v('lokasi'))&&v('lokasi')?'':'display:none'}" placeholder="Ketik nama lokasi…">
           </div>
 
           <!-- STATUS -->
           <div class="fgrp">
             <label class="lbl">Status / Kondisi *</label>
             <div class="radio-group">
-              <label class="radio-item">
-                <input type="radio" name="status" value="aktif" ${chk(v('status','aktif'),'aktif')}> 
-                <span class="bdg bdg-g">✓ Masih Digunakan</span>
-              </label>
-              <label class="radio-item">
-                <input type="radio" name="status" value="rusak" ${chk(v('status','aktif'),'rusak')}>
-                <span class="bdg bdg-r">✕ Rusak</span>
-              </label>
+              <label class="radio-item"><input type="radio" name="status" value="aktif" ${chk(v('status','aktif'),'aktif')}> <span class="bdg bdg-g">✓ Aktif</span></label>
+              <label class="radio-item"><input type="radio" name="status" value="rusak" ${chk(v('status','aktif'),'rusak')}> <span class="bdg bdg-r">✕ Rusak</span></label>
+            </div>
+          </div>
+
+          <!-- BISA DIPINJAM -->
+          <div class="fgrp">
+            <label class="lbl">Kebijakan Peminjaman</label>
+            <div class="radio-group">
+              <label class="radio-item"><input type="radio" name="bisaDipinjam" value="ya" ${bisDipinjam!==false?'checked':''} onchange="document.getElementById('sec-pinjam-form').style.display=''"> <span class="bdg bdg-b">✓ Bisa Dipinjam</span></label>
+              <label class="radio-item"><input type="radio" name="bisaDipinjam" value="tidak" ${bisDipinjam===false?'checked':''} onchange="document.getElementById('sec-pinjam-form').style.display='none'"> <span class="bdg bdg-n">✕ Tidak Bisa Dipinjam</span></label>
             </div>
           </div>
 
@@ -812,50 +964,59 @@ function tplFormBarang() {
           <div class="fgrp">
             <label class="lbl">Jadwal Perawatan</label>
             <div class="radio-group">
-              <label class="radio-item">
-                <input type="radio" name="jadwal" value="ada" ${chk(v('jadwalPerawatan','tidak'),'ada')} onchange="toggleSection('sec-rawat',this.value==='ada')">
-                Ada Perawatan
-              </label>
-              <label class="radio-item">
-                <input type="radio" name="jadwal" value="tidak" ${chk(v('jadwalPerawatan','tidak'),'tidak')} onchange="toggleSection('sec-rawat',false)">
-                Tidak Ada
-              </label>
+              <label class="radio-item"><input type="radio" name="jadwal" value="ada" ${chk(v('jadwalPerawatan','tidak'),'ada')} onchange="toggleSection('sec-rawat',true)"> Ada</label>
+              <label class="radio-item"><input type="radio" name="jadwal" value="tidak" ${chk(v('jadwalPerawatan','tidak'),'tidak')} onchange="toggleSection('sec-rawat',false)"> Tidak Ada</label>
             </div>
           </div>
 
-          <div id="sec-rawat" style="grid-column:1/-1;${v('jadwalPerawatan','tidak')==='ada'?'':'display:none'}">
-            <label class="lbl">Detail Jadwal Perawatan</label>
-            <input class="inp" name="detailPerawatan" value="${v('detailPerawatan')}" placeholder="Contoh: Setiap 3 bulan – pengecekan rutin">
-          </div>
-
-          <!-- PEMINJAMAN -->
-          <div class="fgrp" style="grid-column:1/-1">
-            <label class="lbl">Status Peminjaman</label>
-            <div class="radio-group">
-              <label class="radio-item">
-                <input type="radio" name="dipinjam" value="ya" ${vp('dipinjam',false)?'checked':''} onchange="toggleSection('sec-pinjam',true)">
-                <span class="bdg bdg-y">Sedang Dipinjam</span>
-              </label>
-              <label class="radio-item">
-                <input type="radio" name="dipinjam" value="tidak" ${!vp('dipinjam',false)?'checked':''} onchange="toggleSection('sec-pinjam',false)">
-                <span class="bdg bdg-n">Tersedia</span>
-              </label>
+          <div id="sec-rawat" style="grid-column:1/-1;${v('jadwalPerawatan')==='ada'?'':'display:none'}">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="fgrp"><label class="lbl">Interval Perawatan</label>
+                <select class="inp" name="intervalRawat">
+                  ${[['7','Setiap 1 minggu'],['14','Setiap 2 minggu'],['30','Setiap 1 bulan'],['60','Setiap 2 bulan'],['90','Setiap 3 bulan'],['180','Setiap 6 bulan'],['365','Setiap 1 tahun']].map(([v2,l])=>`<option value="${v2}" ${v('intervalRawat','30')===v2?'selected':''}>${l}</option>`).join('')}
+                </select>
+              </div>
+              <div class="fgrp"><label class="lbl">Tanggal Perawatan Terakhir</label>
+                <input class="inp" type="date" name="tglRawatTerakhir" value="${v('tglRawatTerakhir')}">
+              </div>
+              <div class="fgrp" style="grid-column:1/-1"><label class="lbl">Keterangan Perawatan</label>
+                <input class="inp" name="detailPerawatan" value="${v('detailPerawatan')}" placeholder="Contoh: Servis rutin, pembersihan, dll">
+              </div>
             </div>
           </div>
 
-          <div id="sec-pinjam" style="grid-column:1/-1;display:${vp('dipinjam',false)?'grid':'none'};grid-template-columns:1fr 1fr;gap:14px">
-            <div class="fgrp">
-              <label class="lbl">Jumlah Dipinjam</label>
-              <input class="inp" type="number" name="jmlPinjam" value="${vp('jumlahDipinjam',1)}" min="1">
+          <!-- STOK TERSEDIA (edit mode) -->
+          ${ed?`<div style="grid-column:1/-1;background:var(--bg);border-radius:10px;padding:12px 14px">
+            <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">📊 Info Stok</div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">
+              <span>Total: <strong>${v('jumlah')}</strong></span>
+              <span>Dipinjam: <strong style="color:var(--warn)">${totalPinjam}</strong></span>
+              <span>Tersedia: <strong style="color:var(--success)">${stokTersedia}</strong></span>
             </div>
-            <div class="fgrp">
-              <label class="lbl">Nama Peminjam</label>
-              <input class="inp" name="peminjam" value="${vp('peminjam')}" placeholder="Nama orang / organisasi">
-            </div>
+            ${pinjamList.length?`<div style="margin-top:8px">
+              <div style="font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:4px">Sedang dipinjam:</div>
+              ${pinjamList.map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12.5px">
+                <span style="flex:1"><strong>${p.nama}</strong> — ${p.jumlah} unit (${p.tgl||'–'})</span>
+                <button type="button" class="abt ad" onclick="kembalikanPinjam('${it.id}','${p.id}')">Kembalikan</button>
+              </div>`).join('')}
+            </div>`:''}
+          </div>`:''}
+
+          <!-- TAMBAH PEMINJAMAN (edit mode) -->
+          <div id="sec-pinjam-form" style="grid-column:1/-1;${bisDipinjam===false?'display:none':''}">
+            ${ed?`<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:12px 14px">
+              <div style="font-size:13px;font-weight:600;color:#1D4ED8;margin-bottom:8px">➕ Tambah Peminjaman</div>
+              <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end">
+                <div class="fgrp" style="margin:0"><label class="lbl">Nama Peminjam</label><input class="inp" id="pinjam-nama" placeholder="Nama orang / organisasi"></div>
+                <div class="fgrp" style="margin:0"><label class="lbl">Jumlah</label><input class="inp" type="number" id="pinjam-jml" value="1" min="1" style="width:80px"></div>
+                <button type="button" class="btn btn-primary" onclick="tambahPinjam('${it.id}')">Pinjam</button>
+              </div>
+            </div>`:
+            `<p style="font-size:12.5px;color:var(--muted)">Simpan barang dulu, lalu bisa kelola peminjaman dari tombol Edit.</p>`}
           </div>
 
         </div>
-        <div style="display:flex;gap:10px;padding-top:14px;border-top:1px solid var(--border);margin-top:4px">
+        <div style="display:flex;gap:10px;padding-top:14px;border-top:1px solid var(--border);margin-top:8px">
           <button type="submit" class="btn btn-accent" id="sbmt-btn">${ed?'💾 Simpan Perubahan':'+ Tambah Barang'}</button>
           <button type="button" class="btn btn-outline" onclick="go('barang')">Batal</button>
         </div>
@@ -863,6 +1024,7 @@ function tplFormBarang() {
     </div>
   </div>`;
 }
+
 
 // ── CARI ───────────────────────────────────────────────────────
 function tplCari() {
@@ -930,13 +1092,13 @@ function tplRiwayat() {
 
 // ── LAPORAN ────────────────────────────────────────────────────
 function tplLaporan() {
-  const tabs = ['Jenis','Lokasi','Status','Peminjaman','Pencatatan'];
+  const tabs = ['Per Jenis','Per Lokasi','Status','Peminjaman','Perawatan','Pencatatan'];
   return `
   <div class="ph">
     <div><h1 class="ff">Laporan Inventaris</h1><p>Analisis dan ringkasan data barang</p></div>
     <button class="btn btn-outline" onclick="window.print()">🖨️ Cetak</button>
   </div>
-  <div class="tabs">
+  <div class="tabs" style="flex-wrap:wrap">
     ${tabs.map((t,i)=>`<button class="tab-btn ${i===S.lapTab?'active':''}" onclick="switchTab(${i})">${t}</button>`).join('')}
   </div>
   <div id="lap-body">Memuat…</div>`;
@@ -994,6 +1156,156 @@ function tplFormPengguna() {
       </form>
     </div>
   </div>`;
+}
+
+// ── NOTIFIKASI ─────────────────────────────────────────────────
+function tplNotifikasi() {
+  const today = new Date();
+  const items = _items;
+  const rawatItems = items.filter(i=>i.jadwalPerawatan==='ada');
+  const alerts = rawatItems.map(i=>{
+    if (!i.tglRawatTerakhir) return {item:i, status:'unknown', hari:null};
+    const last  = new Date(i.tglRawatTerakhir);
+    const next  = new Date(last);
+    next.setDate(next.getDate() + parseInt(i.intervalRawat||30));
+    const selisih = Math.ceil((next-today)/(1000*60*60*24));
+    return {item:i, status: selisih<0?'overdue':selisih<=7?'soon':'ok', hari:selisih, tglNext:next};
+  }).sort((a,b)=>(a.hari??999)-(b.hari??999));
+
+  const overdue = alerts.filter(a=>a.status==='overdue');
+  const soon    = alerts.filter(a=>a.status==='soon');
+  const ok      = alerts.filter(a=>a.status==='ok');
+  const unknown = alerts.filter(a=>a.status==='unknown');
+
+  const card = (a,cls,ic) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:${cls==='ov'?'#FEF2F2':cls==='sn'?'#FEF3C7':'#F0FDF4'};border-radius:10px;margin-bottom:8px;border:1px solid ${cls==='ov'?'#FECACA':cls==='sn'?'#FDE68A':'#BBF7D0'}">
+      <span style="font-size:22px">${ic}</span>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13.5px">${a.item.nama}</div>
+        <div style="font-size:11.5px;color:var(--muted)">${a.item.lokasi||'–'} · ${a.item.jenis||'–'}</div>
+        <div style="font-size:12px;color:${cls==='ov'?'var(--danger)':cls==='sn'?'var(--warn)':'var(--success)'}">
+          ${cls==='ov'?`Terlambat ${Math.abs(a.hari)} hari`:cls==='sn'?`${a.hari} hari lagi`:cls==='ok'?`${a.hari} hari lagi`:'Belum ada catatan'}
+          ${a.tglNext?' · Jadwal: '+a.tglNext.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}):''}
+        </div>
+        ${a.item.detailPerawatan?`<div style="font-size:11px;color:var(--muted);margin-top:2px">📌 ${a.item.detailPerawatan}</div>`:''}
+      </div>
+      <button class="abt ae" onclick="editItem('${a.item.id}')">Update</button>
+    </div>`;
+
+  return `
+  <div class="ph"><div><h1 class="ff">Notifikasi Perawatan</h1><p>Monitor jadwal perawatan semua barang</p></div></div>
+  ${!rawatItems.length?'<div class="card" style="text-align:center;padding:40px"><p style="color:var(--muted)">Tidak ada barang dengan jadwal perawatan.</p></div>':''}
+  ${overdue.length?`<div class="card" style="margin-bottom:14px;border-color:#FECACA">
+    <div style="font-size:13px;font-weight:700;color:var(--danger);margin-bottom:10px">🔴 Terlambat (${overdue.length})</div>
+    ${overdue.map(a=>card(a,'ov','🚨')).join('')}
+  </div>`:''}
+  ${soon.length?`<div class="card" style="margin-bottom:14px;border-color:#FDE68A">
+    <div style="font-size:13px;font-weight:700;color:var(--warn);margin-bottom:10px">🟡 Dalam 7 Hari (${soon.length})</div>
+    ${soon.map(a=>card(a,'sn','⚠️')).join('')}
+  </div>`:''}
+  ${ok.length?`<div class="card" style="margin-bottom:14px">
+    <div style="font-size:13px;font-weight:700;color:var(--success);margin-bottom:10px">🟢 Terjadwal Baik (${ok.length})</div>
+    ${ok.map(a=>card(a,'ok','✅')).join('')}
+  </div>`:''}
+  ${unknown.length?`<div class="card">
+    <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:10px">⚪ Belum Ada Catatan (${unknown.length})</div>
+    ${unknown.map(a=>card(a,'un','❓')).join('')}
+  </div>`:''}`;
+}
+
+// ── MASTER JENIS ────────────────────────────────────────────────
+function tplMasterJenis() {
+  const list = S._masterJenis.length ? S._masterJenis : JENIS_LIST;
+  return `
+  <div class="ph"><div><h1 class="ff">Master Jenis Barang</h1><p>Kelola daftar jenis barang yang tersedia di form input</p></div></div>
+  <div class="card" style="max-width:520px">
+    <div style="margin-bottom:14px">
+      <div class="lbl" style="margin-bottom:8px">Daftar Jenis (drag untuk urutkan)</div>
+      <div id="jenis-list">
+        ${list.map((j,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <input class="inp" style="flex:1" value="${j}" id="jenis-item-${i}" onchange="updateJenisList()">
+          <button class="abt ad" onclick="removeJenisItem(${i})">✕</button>
+        </div>`).join('')}
+      </div>
+      <button class="btn btn-outline" style="margin-top:4px;width:100%" onclick="addJenisItem()">+ Tambah Jenis</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-accent" onclick="saveMasterJenis()">💾 Simpan</button>
+      <button class="btn btn-ghost" onclick="resetMasterJenis()">Reset Default</button>
+    </div>
+  </div>`;
+}
+
+function getJenisInputs() {
+  const inputs = document.querySelectorAll('[id^="jenis-item-"]');
+  return Array.from(inputs).map(i=>i.value.trim()).filter(Boolean);
+}
+function addJenisItem() {
+  const list = document.getElementById('jenis-list');
+  const i = list.children.length;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  div.innerHTML = `<input class="inp" style="flex:1" id="jenis-item-${i}" value="" onchange="updateJenisList()"><button class="abt ad" onclick="this.parentElement.remove()">✕</button>`;
+  list.appendChild(div); div.querySelector('input').focus();
+}
+function removeJenisItem(i) {
+  const el = document.getElementById('jenis-item-'+i);
+  if (el) el.parentElement.remove();
+}
+async function saveMasterJenis() {
+  const list = getJenisInputs();
+  if (!list.length) { toast('Minimal 1 jenis','err'); return; }
+  try { await dbSaveJenis(list); JENIS_LIST = list; toast('Jenis disimpan!'); }
+  catch(e) { toast(e.message,'err'); }
+}
+async function resetMasterJenis() {
+  const def = ['Perlengkapan Ibadah','Elektronik','Furnitur','Peralatan','Lainnya'];
+  await dbSaveJenis(def); JENIS_LIST = def; S._masterJenis = def;
+  toast('Reset ke default'); go('master-jenis');
+}
+
+// ── MASTER LOKASI ───────────────────────────────────────────────
+function tplMasterLokasi() {
+  const list = S._masterLokasi.length ? S._masterLokasi : LOKASI_LIST;
+  return `
+  <div class="ph"><div><h1 class="ff">Master Lokasi</h1><p>Kelola daftar lokasi penempatan barang</p></div></div>
+  <div class="card" style="max-width:520px">
+    <div style="margin-bottom:14px">
+      <div class="lbl" style="margin-bottom:8px">Daftar Lokasi</div>
+      <div id="lokasi-list">
+        ${list.map((l,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <input class="inp" style="flex:1" value="${l}" id="lokasi-item-${i}">
+          <button class="abt ad" onclick="this.parentElement.remove()">✕</button>
+        </div>`).join('')}
+      </div>
+      <button class="btn btn-outline" style="margin-top:4px;width:100%" onclick="addLokasiItem()">+ Tambah Lokasi</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-accent" onclick="saveMasterLokasi()">💾 Simpan</button>
+      <button class="btn btn-ghost" onclick="resetMasterLokasi()">Reset Default</button>
+    </div>
+  </div>`;
+}
+
+function addLokasiItem() {
+  const list = document.getElementById('lokasi-list');
+  const i = list.children.length;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  div.innerHTML = `<input class="inp" style="flex:1" id="lokasi-item-${i}" value=""><button class="abt ad" onclick="this.parentElement.remove()">✕</button>`;
+  list.appendChild(div); div.querySelector('input').focus();
+}
+async function saveMasterLokasi() {
+  const inputs = document.querySelectorAll('[id^="lokasi-item-"]');
+  const list = Array.from(inputs).map(i=>i.value.trim()).filter(Boolean);
+  if (!list.length) { toast('Minimal 1 lokasi','err'); return; }
+  try { await dbSaveLokasi(list); LOKASI_LIST = list; toast('Lokasi disimpan!'); }
+  catch(e) { toast(e.message,'err'); }
+}
+async function resetMasterLokasi() {
+  const def = ['Ruang Utama','Ruang Kajian','Gudang','Selasar','Lainnya'];
+  await dbSaveLokasi(def); LOKASI_LIST = def; S._masterLokasi = def;
+  toast('Reset ke default'); go('master-lokasi');
 }
 
 // ── PENGATURAN ─────────────────────────────────────────────────
@@ -1146,6 +1458,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Hanya browser yang sudah sign-in (termasuk anonymous) yang bisa akses.
     // Login user dikelola aplikasi SIMBA sendiri (username/password di Firestore).
+    // Semua koleksi hanya bisa diakses oleh browser yang sudah anonymous sign-in
     match /{document=**} {
       allow read, write: if request.auth != null;
     }
@@ -1187,7 +1500,7 @@ function tplRepair() {
       <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
       <div style="color:rgba(255,255,255,.55);font-size:12.5px;margin:10px 0 24px">Perbaikan Data Akun</div>
 
-      <div style="background:rgba(255,255,255,.09);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.15);border-radius:18px;padding:20px;text-align:left">
+      <div style="background:rgba(255,255,255,.09);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.15);border-radius:18px;padding:26px;text-align:left">
         <div style="background:#FEF9C3;border:1px solid #FDE047;border-radius:10px;padding:12px 14px;margin-bottom:18px">
           <div style="font-size:13px;font-weight:700;color:#78350F;margin-bottom:4px">⚠️ Data Akun Tidak Lengkap</div>
           <div style="font-size:12.5px;color:#92400E;line-height:1.6">
@@ -1256,8 +1569,8 @@ function tplLogin() {
   <div class="login-wrap" style="background:${lg};min-height:100vh">
     <div style="text-align:center;width:100%;max-width:400px;padding:20px">
       <div style="margin-bottom:6px">${logoHtml('56px',true)}</div>
-      <div class="ff" style="color:var(--accent);font-size:26px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
-      <div style="color:rgba(255,255,255,.45);font-size:15px;letter-spacing:2px;margin-bottom:28px">${S.theme.appSubtitle}</div>
+      <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
+      <div style="color:rgba(255,255,255,.45);font-size:10.5px;letter-spacing:2px;margin-bottom:28px">${S.theme.appSubtitle}</div>
       <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:28px">
         <form onsubmit="handleLogin(event)">
           <div class="fgrp" style="text-align:left;margin-bottom:14px">
@@ -1274,7 +1587,12 @@ function tplLogin() {
           <div id="l-err" style="color:#fca5a5;font-size:13px;margin-top:10px;display:none"></div>
         </form>
       </div>
-
+      <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px;margin-top:14px;text-align:left">
+        <div style="color:rgba(255,255,255,.5);font-size:11px;font-weight:600;margin-bottom:4px">🔑 Default Login</div>
+        <div style="color:rgba(255,255,255,.65);font-size:12px">Username: <strong style="color:var(--accent)">superadmin</strong></div>
+        <div style="color:rgba(255,255,255,.65);font-size:12px">Password: <strong style="color:var(--accent)">superadmin123</strong></div>
+        <div style="color:rgba(255,255,255,.35);font-size:10.5px;margin-top:4px">Ganti password setelah masuk pertama kali</div>
+      </div>
       <div style="color:rgba(255,255,255,.2);font-size:11px;margin-top:14px">${S.theme.appTitle} v2.0 © ${new Date().getFullYear()}</div>
     </div>
   </div>`;
@@ -1315,13 +1633,28 @@ function bindLogin() {}
 function bindSetup() {}
 
 function bindPage() {
+  hitungNotif();
   switch(S.page) {
-    case 'dashboard':  loadDashboard(); break;
-    case 'barang':     loadItems(); break;
-    case 'riwayat':    loadHistory(); break;
-    case 'laporan':    loadLaporan(S.lapTab); break;
-    case 'pengguna':   loadUsers(); break;
+    case 'dashboard':    loadDashboard(); break;
+    case 'barang':       loadItems(); break;
+    case 'riwayat':      loadHistory(); break;
+    case 'laporan':      loadLaporan(S.lapTab); break;
+    case 'pengguna':     loadUsers(); break;
+    case 'master-jenis': break;  // static
+    case 'master-lokasi':break;  // static
+    case 'notifikasi':   break;  // menggunakan _items cache
   }
+}
+
+function hitungNotif() {
+  if (!_items.length) return;
+  const today = new Date();
+  S._notifCount = _items.filter(i=>{
+    if (i.jadwalPerawatan!=='ada' || !i.tglRawatTerakhir) return false;
+    const last=new Date(i.tglRawatTerakhir), next=new Date(last);
+    next.setDate(next.getDate()+parseInt(i.intervalRawat||30));
+    return next <= today || Math.ceil((next-today)/(1000*60*60*24)) <= 7;
+  }).length;
 }
 
 // ─ login ────────────────────────────────────────────────────
@@ -1388,14 +1721,20 @@ async function handleSetup(e) {
 // ─ helper toggle ────────────────────────────────────────────
 function toggleSection(id, show) {
   const el = document.getElementById(id);
-  if (el) { el.style.display = show ? (id==='sec-pinjam'?'grid':'block') : 'none'; }
+  if (el) { el.style.display = show ? 'block' : 'none'; }
+}
+function onLokasiChange(sel) {
+  const manual = document.getElementById('lokasi-manual');
+  if (manual) manual.style.display = sel.value === '__lainnya' ? '' : 'none';
 }
 
 // ─ submit barang ─────────────────────────────────────────────
 async function submitItem(e) {
   e.preventDefault();
   const f = e.target, btn = document.getElementById('sbmt-btn');
-  const dp = f.dipinjam.value === 'ya';
+  // Lokasi: cek apakah pilih "lainnya"
+  let lokasi = f.lokasi.value;
+  if (lokasi === '__lainnya') lokasi = (f.lokasiManual?.value||'').trim();
   const data = {
     kode:              f.kode.value.trim(),
     nama:              f.nama.value.trim(),
@@ -1403,15 +1742,14 @@ async function submitItem(e) {
     jumlah:            parseInt(f.jumlah.value),
     tanggalDiperoleh:  f.tanggalDiperoleh.value,
     diperolehDari:     f.diperolehDari.value.trim(),
-    lokasi:            f.lokasi.value.trim(),
+    lokasi:            lokasi,
     status:            f.status.value,
+    bisaDipinjam:      f.bisaDipinjam.value !== 'tidak',
     jadwalPerawatan:   f.jadwal.value,
     detailPerawatan:   f.detailPerawatan?.value?.trim() || '',
-    peminjaman: {
-      dipinjam:       dp,
-      jumlahDipinjam: dp ? parseInt(f.jmlPinjam?.value||0) : 0,
-      peminjam:       dp ? (f.peminjam?.value?.trim()||'') : '',
-    },
+    intervalRawat:     f.intervalRawat?.value || '30',
+    tglRawatTerakhir:  f.tglRawatTerakhir?.value || '',
+    pinjamList:        S.item?.pinjamList || [],
   };
   btn.disabled = true; btn.textContent = 'Menyimpan…';
   try {
@@ -1419,6 +1757,29 @@ async function submitItem(e) {
     else        { await dbCreateItem(data); toast('Barang ditambahkan!'); }
     go('barang');
   } catch(ex) { toast('Gagal: '+ex.message,'err'); btn.disabled=false; btn.textContent=S.item?'💾 Simpan Perubahan':'+ Tambah Barang'; }
+}
+
+async function tambahPinjam(itemId) {
+  const nama = document.getElementById('pinjam-nama')?.value?.trim();
+  const jml  = parseInt(document.getElementById('pinjam-jml')?.value||1);
+  if (!nama) { toast('Isi nama peminjam','err'); return; }
+  try {
+    await dbTambahPinjam(itemId, nama, jml);
+    toast('Peminjaman dicatat!');
+    // Reload form
+    const it = await dbItem(itemId);
+    go('form-barang', {item: it});
+  } catch(ex) { toast(ex.message,'err'); }
+}
+
+async function kembalikanPinjam(itemId, pinjamId) {
+  if (!confirm('Tandai sebagai sudah dikembalikan?')) return;
+  try {
+    await dbKembalikanPinjam(itemId, pinjamId);
+    toast('Peminjaman dikembalikan!');
+    const it = await dbItem(itemId);
+    go('form-barang', {item: it});
+  } catch(ex) { toast(ex.message,'err'); }
 }
 
 // ─ submit user ───────────────────────────────────────────────
@@ -1490,7 +1851,7 @@ async function loadDashboard() {
       <div class="sc">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
-            <div style="font-size:20px;font-weight:700;color:${s.col}">${s.val}</div>
+            <div style="font-size:26px;font-weight:700;color:${s.col}">${s.val}</div>
             <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${s.lbl}</div>
           </div>
           <div style="font-size:28px">${s.ic}</div>
@@ -1547,35 +1908,45 @@ function renderItemsTable(items) {
   if (!items.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada barang. Tambahkan barang baru!</p>'; return; }
   el.innerHTML = `
     <div style="margin-bottom:8px;font-size:13px;color:var(--muted)">Menampilkan <strong>${items.length}</strong> barang</div>
+    <div style="overflow-x:auto">
     <table class="tbl">
       <thead><tr>
-        <th>Kode</th><th>Nama Barang</th><th>Jenis</th><th>Jml</th>
-        <th>Lokasi</th><th>Status</th><th>Peminjaman</th><th>Perawatan</th><th>Aksi</th>
+        <th>Kode</th><th>Nama Barang</th><th>Jenis</th>
+        <th>Total</th><th>Dipinjam</th><th>Tersedia</th>
+        <th>Lokasi</th><th>Status</th><th>Pinjam</th><th>Rawat</th><th>Aksi</th>
       </tr></thead>
       <tbody>
-      ${items.map(it=>`
-        <tr>
-          <td style="font-family:monospace;font-size:11.5px">${it.kode||'–'}</td>
-          <td style="font-weight:500">${it.nama}</td>
+      ${items.map(it=>{
+        const pinjamList   = it.pinjamList||[];
+        const totalPinjam  = pinjamList.reduce((s,p)=>s+p.jumlah,0);
+        const stok         = Math.max(0,it.jumlah-totalPinjam);
+        const bisDipinjam  = it.bisaDipinjam!==false;
+        return `<tr>
+          <td style="font-family:monospace;font-size:11px">${it.kode||'–'}</td>
+          <td style="font-weight:500;min-width:120px">${it.nama}</td>
           <td style="font-size:12px">${it.jenis||'–'}</td>
-          <td>${it.jumlah||0}</td>
+          <td style="text-align:center">${it.jumlah||0}</td>
+          <td style="text-align:center"><span style="color:var(--warn);font-weight:600">${totalPinjam||0}</span></td>
+          <td style="text-align:center"><span style="color:${stok>0?'var(--success)':'var(--danger)'};font-weight:700">${stok}</span></td>
           <td style="font-size:12px;color:var(--muted)">${it.lokasi||'–'}</td>
-          <td><span class="bdg ${it.status==='rusak'?'bdg-r':'bdg-g'}">${it.status==='rusak'?'Rusak':'Aktif'}</span></td>
+          <td><span class="bdg ${it.status==='rusak'?'bdg-r':'bdg-g'}" style="font-size:10px">${it.status==='rusak'?'Rusak':'Aktif'}</span></td>
           <td>
-            ${it.peminjaman?.dipinjam
-              ?`<span class="bdg bdg-y" style="font-size:10.5px">📤 ${it.peminjaman.peminjam||'–'} (${it.peminjaman.jumlahDipinjam||0})</span>`
-              :`<span class="bdg bdg-n" style="font-size:10.5px">Tersedia</span>`}
+            ${!bisDipinjam?'<span class="bdg bdg-n" style="font-size:10px">Tidak Bisa</span>'
+              :pinjamList.length
+                ?`<span class="bdg bdg-y" style="font-size:10px" title="${pinjamList.map(p=>p.nama+' ('+p.jumlah+')').join(', ')}">📤 ${pinjamList.length} org</span>`
+                :'<span class="bdg bdg-g" style="font-size:10px">Tersedia</span>'}
           </td>
-          <td><span class="bdg ${it.jadwalPerawatan==='ada'?'bdg-b':'bdg-n'}" style="font-size:10.5px">${it.jadwalPerawatan==='ada'?'Ada':'–'}</span></td>
+          <td><span class="bdg ${it.jadwalPerawatan==='ada'?'bdg-b':'bdg-n'}" style="font-size:10px">${it.jadwalPerawatan==='ada'?'Rawat':'–'}</span></td>
           <td>
-            <div style="display:flex;gap:5px">
+            <div style="display:flex;gap:4px">
               <button class="act-btn act-edit" onclick="editItem('${it.id}')">Edit</button>
-              <button class="act-btn act-del" onclick="delItem('${it.id}','${it.nama.replace(/'/g,"\\'")}')">Hapus</button>
+              <button class="act-btn act-del" onclick="delItem('${it.id}','${it.nama.replace(/'/g,"\'")}')">Hapus</button>
             </div>
           </td>
-        </tr>`).join('')}
+        </tr>`;
+      }).join('')}
       </tbody>
-    </table>`;
+    </table></div>`;
 }
 
 function filterItems() {
@@ -1752,33 +2123,46 @@ async function loadLaporan(tab) {
       },'Laporan per Status / Kondisi');
     } else if (tab===3) {
       html = renderLapGroup({
-        'Sedang Dipinjam': items.filter(i=>i.peminjaman?.dipinjam),
-        'Tersedia':        items.filter(i=>!i.peminjaman?.dipinjam),
+        'Sedang Dipinjam': items.filter(i=>(i.pinjamList||[]).length>0),
+        'Tersedia':        items.filter(i=>!(i.pinjamList||[]).length),
       },'Laporan Peminjaman');
     } else if (tab===4) {
+      // Tab Perawatan
+      const today = new Date();
+      const rawat = items.filter(i=>i.jadwalPerawatan==='ada');
+      if (!rawat.length) { html = '<div class="card" style="text-align:center;padding:40px"><p style="color:var(--muted)">Tidak ada barang dengan jadwal perawatan</p></div>'; }
+      else {
+        const rows = rawat.map(i=>{
+          if (!i.tglRawatTerakhir) return {item:i,status:'unknown',hari:null,tglNext:null};
+          const last=new Date(i.tglRawatTerakhir),next=new Date(last);
+          next.setDate(next.getDate()+parseInt(i.intervalRawat||30));
+          const hari=Math.ceil((next-today)/(1000*60*60*24));
+          return {item:i,status:hari<0?'overdue':hari<=7?'soon':'ok',hari,tglNext:next};
+        }).sort((a,b)=>(a.hari??999)-(b.hari??999));
+        html = `<div class="card" style="overflow-x:auto">
+          <div style="font-size:13.5px;font-weight:700;color:var(--primary);margin-bottom:12px">🔧 Laporan Jadwal Perawatan</div>
+          <table class="tbl"><thead><tr><th>Nama Barang</th><th>Jenis</th><th>Lokasi</th><th>Interval</th><th>Tgl Terakhir</th><th>Jadwal Berikutnya</th><th>Status</th></tr></thead>
+          <tbody>${rows.map(r=>{
+            const sc=r.status==='overdue'?'bdg-r':r.status==='soon'?'bdg-y':'bdg-g';
+            const sl=r.status==='overdue'?'Terlambat '+Math.abs(r.hari)+' hr':r.status==='soon'?r.hari+' hr lagi':r.status==='ok'?r.hari+' hr lagi':'Belum dicatat';
+            return '<tr><td style="font-weight:500">'+r.item.nama+'</td><td style="font-size:12px">'+( r.item.jenis||'–')+'</td><td style="font-size:12px">'+(r.item.lokasi||'–')+'</td><td style="font-size:12px">'+(r.item.intervalRawat||30)+' hari</td><td style="font-size:12px">'+(r.item.tglRawatTerakhir||'–')+'</td><td style="font-size:12px">'+(r.tglNext?r.tglNext.toLocaleDateString('id-ID'):'–')+'</td><td><span class="bdg '+sc+'" style="font-size:10.5px">'+sl+'</span></td></tr>';
+          }).join('')}</tbody></table></div>`;
+      }
+    } else if (tab===5) {
       const hist = await dbHistory();
       const bu = grpBy(hist,'userName');
-      html = `<div class="card">
-        <h3 style="font-size:15px;font-weight:600;color:var(--primary);margin-bottom:16px">📝 Riwayat Pencatatan per Pengguna</h3>
-        ${Object.entries(bu).map(([name,acts])=>`
-          <div style="margin-bottom:14px;padding:14px;background:var(--bg);border-radius:10px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <div>
-                <div style="font-weight:600">${name}</div>
-                <div style="font-size:12px;color:var(--muted)">${roleLabel(acts[0]?.userRole)}</div>
-              </div>
-              <div style="text-align:right">
-                <div style="font-size:22px;font-weight:700;color:var(--primary)">${acts.length}</div>
-                <div style="font-size:11px;color:var(--muted)">total aktivitas</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:7px;flex-wrap:wrap">
-              <span class="bdg bdg-g">Tambah: ${acts.filter(a=>a.action==='tambah').length}</span>
-              <span class="bdg bdg-b">Edit: ${acts.filter(a=>a.action==='edit').length}</span>
-              <span class="bdg bdg-r">Hapus: ${acts.filter(a=>a.action==='hapus').length}</span>
-            </div>
-          </div>`).join('')}
-      </div>`;
+      html = Object.entries(bu).map(([name,acts])=>`
+        <div class="card" style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div><div style="font-weight:600">${name}</div><div style="font-size:12px;color:var(--muted)">${roleLabel(acts[0]?.userRole)}</div></div>
+            <div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--primary)">${acts.length}</div><div style="font-size:11px;color:var(--muted)">aktivitas</div></div>
+          </div>
+          <div style="display:flex;gap:7px;flex-wrap:wrap">
+            <span class="bdg bdg-g">Tambah: ${acts.filter(a=>a.action==='tambah').length}</span>
+            <span class="bdg bdg-b">Edit: ${acts.filter(a=>a.action==='edit').length}</span>
+            <span class="bdg bdg-r">Hapus: ${acts.filter(a=>a.action==='hapus').length}</span>
+          </div>
+        </div>`).join('');
     }
     el.innerHTML = html;
   } catch(e){ el.innerHTML=`<p style="color:var(--danger)">Error: ${e.message}</p>`; }
@@ -2047,6 +2431,14 @@ async function initApp() {
 
   try { await dbLoadSettings(); } catch(e) { /* tema default */ }
   await initDefaultAdmin();
+
+  // Muat master jenis & lokasi
+  try {
+    S._masterJenis  = await dbGetJenis();
+    S._masterLokasi = await dbGetLokasi();
+    JENIS_LIST  = S._masterJenis;
+    LOKASI_LIST = S._masterLokasi;
+  } catch(e) { console.warn('master data:', e.message); }
 
   const sess = loadSession();
   if (sess && (sess.id || sess.uid)) {
