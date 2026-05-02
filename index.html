@@ -674,7 +674,7 @@ async function doBackup() {
     },null,2)],{type:'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `backup-simba-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `backup-siv-${t.appTitle}-${new Date().toISOString().slice(0,10)}.json`;
     a.click(); URL.revokeObjectURL(a.href);
     toast('Backup berhasil diunduh!');
   } catch(e){ toast('Gagal backup: '+e.message,'err'); }
@@ -1377,7 +1377,7 @@ function tplPengaturan() {
       <!-- JUDUL -->
       <div class="fgrp">
         <label class="lbl">Nama / Judul Aplikasi</label>
-        <input class="inp" id="th-title" value="${t.appTitle}" placeholder="Contoh: SIMBA">
+        <input class="inp" id="th-title" value="${t.appTitle}" placeholder="Contoh: Sistem Inventaris">
       </div>
       <div class="fgrp">
         <label class="lbl">Sub-judul (Tagline)</label>
