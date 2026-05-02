@@ -132,6 +132,12 @@
     .ph p { font-size: 13px; color: var(--muted); margin-top: 3px; }
 
     /* ── MOBILE ── */
+    /* ── TOPBAR MOBILE ONLY ── */
+    .topbar-mobile{display:none}
+    @media(max-width:768px){
+      .topbar-mobile{display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;position:sticky;top:0;z-index:50}
+    }
+
     /* ── MOBILE RESPONSIVE ── */
     @media(max-width:768px){
       .sidebar{transform:translateX(-100%);z-index:200;box-shadow:4px 0 24px rgba(0,0,0,.3)}
@@ -139,8 +145,6 @@
       .main{margin-left:0!important;padding:12px 10px 80px}
       .sb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199;display:none}
       .sb-overlay.show{display:block}
-      .topbar{padding:10px 14px}
-      .topbar h2{font-size:15px}
       .grid4{grid-template-columns:repeat(2,1fr)!important}
       .grid2{grid-template-columns:1fr!important}
       .tbl{font-size:11.5px}
@@ -717,11 +721,12 @@ function render() {
       <div class="sb-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
       ${tplSidebar()}
       <div class="main" style="flex:1;min-width:0;margin-left:256px">
-        <div class="topbar" style="padding-left:60px">
-          <h2>${pageTitles[S.page]||'SIMBA'}</h2>
-          <div style="display:flex;gap:8px;align-items:center">
-            ${S.page==='barang'?'<button class="btn ba" onclick="openAddItem()">+ Tambah Barang</button>':''}
-            ${S.page==='pengguna'?`<button class="btn ba" onclick="go('form-pengguna')">+ Tambah Pengguna</button>`:''}
+        <!-- Topbar mobile only -->
+        <div class="topbar-mobile">
+          <div style="font-size:13.5px;font-weight:700;color:var(--primary);margin-left:44px">${pageTitles[S.page]||'SIMBA'}</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${S.page==='barang'?'<button class="btn ba" style="font-size:11.5px;padding:5px 10px" onclick="openAddItem()">+ Barang</button>':''}
+            ${S.page==='pengguna'?`<button class="btn ba" style="font-size:11.5px;padding:5px 10px" onclick="go('form-pengguna')">+ Pengguna</button>`:''}
             <button onclick="go('notifikasi')" style="position:relative;background:transparent;border:none;cursor:pointer;font-size:20px;padding:4px">
               🔔${S._notifCount>0?`<span style="position:absolute;top:0;right:0;background:#DC2626;color:#fff;border-radius:9px;font-size:9px;font-weight:700;padding:1px 5px;min-width:16px;text-align:center">${S._notifCount}</span>`:''}
             </button>
