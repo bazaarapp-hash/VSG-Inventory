@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SIV – Sistem Inventaris Vihara</title>
+  <title>SIMBA – Sistem Inventaris Tempat Ibadah</title>
 
   <!-- Firebase SDK v9 compat -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -40,11 +40,12 @@
     /* ── SIDEBAR ── */
     .sidebar {
       background: var(--primary);
-      width: 256px; min-height: 100vh;
+      width: 256px; height: 100vh;
       position: fixed; left: 0; top: 0;
       transition: transform .3s ease; z-index: 50;
       overflow-y: auto; overflow-x: hidden;
       display: flex; flex-direction: column;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
     }
     .nav-item {
       display: flex; align-items: center; gap: 10px;
@@ -321,6 +322,10 @@ function can(a) {
 }
 
 function go(page, params={}) {
+  // Hentikan realtime listeners jika pindah dari dashboard
+  if (S.page === 'dashboard' && page !== 'dashboard') {
+    stopRealtimeListeners();
+  }
   S.page  = page;
   S.item  = params.item  || null;
   S.udata = params.udata || null;
@@ -770,7 +775,7 @@ function tplSidebar() {
       <div style="color:rgba(255,255,255,.4);font-size:9px;letter-spacing:1.5px;margin-top:2px">${S.theme.appSubtitle}</div>
       <div style="height:1px;background:rgba(255,255,255,.1);margin:14px 0"></div>
     </div>
-    <nav style="flex:1;padding-bottom:16px">
+    <nav style="flex:1;padding-bottom:8px;overflow-y:auto;overflow-x:hidden">
       ${navs.map(n=>`
         <div class="nav-item ${p===n.id?'active':''}" onclick="go('${n.id}')">
           <span class="nav-icon">${n.ic}</span>
@@ -1847,87 +1852,96 @@ async function submitUser(e) {
 // ═══════════════════════════════════════════════════════════════
 //  DATA LOADERS
 // ═══════════════════════════════════════════════════════════════
+// Simpan unsubscribe functions untuk realtime listeners
+let _unsubItems   = null;
+let _unsubHistory = null;
+
+function stopRealtimeListeners() {
+  if (_unsubItems)   { _unsubItems();   _unsubItems   = null; }
+  if (_unsubHistory) { _unsubHistory(); _unsubHistory = null; }
+}
+
 async function loadDashboard() {
-  // Ambil items dan history secara terpisah agar satu gagal tidak blokir semua
-  let items = [], hist = [];
+  // Hentikan listener lama jika ada
+  stopRealtimeListeners();
 
-  try { items = await dbItems(); }
-  catch(e) {
-    console.warn('items:', e.code, e.message);
+  // Realtime listener untuk items
+  _unsubItems = db.collection('items').onSnapshot(snap => {
+    _items = snap.docs.map(d=>({id:d.id,...d.data()}));
+    hitungNotif();
+    renderDashboardStats(_items);
+    renderDashboardAttn(_items);
+  }, e => {
+    console.warn('items snapshot:', e.code);
     const st = document.getElementById('stats');
-    if (st) {
-      const isPerms = e.code === 'permission-denied';
-      const msg = isPerms
-        ? `⚠️ Akses ditolak Firestore.<br>
-           <span style="font-size:12px">Pastikan <strong>Security Rules</strong> sudah dipublish di Firebase Console.<br>
-           Buka <strong>Pengaturan</strong> → scroll bawah → copy rules → paste di Firestore Console → klik Publish.</span>`
-        : '⚠️ Gagal memuat barang: ' + e.message;
-      st.innerHTML = `<div style="grid-column:1/-1;padding:14px 16px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;color:var(--danger);font-size:13px;line-height:1.6">${msg}</div>`;
-    }
-  }
+    if (st) st.innerHTML = `<div style="grid-column:1/-1;padding:14px;background:#FEF2F2;border-radius:10px;color:var(--danger);font-size:13px">⚠️ Akses ditolak. Periksa Firestore Rules.</div>`;
+  });
 
-  try { hist = await dbHistory(); }
-  catch(e) { console.warn('history:', e.code, e.message); }
+  // Realtime listener untuk history
+  _unsubHistory = db.collection('history').orderBy('timestamp','desc').limit(20).onSnapshot(snap => {
+    const hist = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderDashboardHistory(hist);
+  }, e => console.warn('history snapshot:', e.code));
+}
 
-  // ── Stats ──
+function renderDashboardStats(items) {
+  const st = document.getElementById('stats');
+  if (!st) return;
   const total  = items.length;
   const rusak  = items.filter(i=>i.status==='rusak').length;
-  const pinjam = items.filter(i=>i.peminjaman?.dipinjam).length;
+  const pinjam = items.filter(i=>(i.pinjamList||[]).length>0).length;
   const rawat  = items.filter(i=>i.jadwalPerawatan==='ada').length;
-
-  const st = document.getElementById('stats');
-  if (st) {
-    st.innerHTML = [
-      {ic:'📦', lbl:'Total Barang',     val:total,       col:'var(--primary)'},
-      {ic:'✅', lbl:'Masih Digunakan',  val:total-rusak,  col:'var(--success)'},
-      {ic:'🔴', lbl:'Kondisi Rusak',    val:rusak,        col:'var(--danger)'},
-      {ic:'🔄', lbl:'Sedang Dipinjam',  val:pinjam,       col:'var(--warn)'},
-      {ic:'🔧', lbl:'Ada Jadwal Rawat', val:rawat,        col:'var(--info)'},
-    ].map(s=>`
-      <div class="sc">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div style="font-size:26px;font-weight:700;color:${s.col}">${s.val}</div>
-            <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${s.lbl}</div>
-          </div>
-          <div style="font-size:28px">${s.ic}</div>
+  st.innerHTML = [
+    {ic:'📦', lbl:'Total Barang',     val:total,       col:'var(--primary)'},
+    {ic:'✅', lbl:'Masih Digunakan',  val:total-rusak,  col:'var(--success)'},
+    {ic:'🔴', lbl:'Kondisi Rusak',    val:rusak,        col:'var(--danger)'},
+    {ic:'🔄', lbl:'Sedang Dipinjam',  val:pinjam,       col:'var(--warn)'},
+    {ic:'🔧', lbl:'Ada Jadwal Rawat', val:rawat,        col:'var(--info)'},
+  ].map(s=>`
+    <div class="sc">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:26px;font-weight:700;color:${s.col}">${s.val}</div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${s.lbl}</div>
         </div>
-      </div>`).join('');
-  }
+        <div style="font-size:28px">${s.ic}</div>
+      </div>
+    </div>`).join('');
+}
 
-  // ── Aktivitas Terbaru ──
+function renderDashboardHistory(hist) {
   const rec = document.getElementById('recent');
-  if (rec) {
-    if (!hist.length) {
-      rec.innerHTML = '<p style="color:var(--muted);font-size:13px">Belum ada aktivitas</p>';
-    } else {
-      rec.innerHTML = hist.slice(0,8).map(h=>`
-        <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid var(--border)">
-          <span style="font-size:15px">${h.action==='tambah'?'➕':h.action==='edit'?'✏️':'🗑️'}</span>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.itemNama||'–'}</div>
-            <div style="font-size:11px;color:var(--muted)">${h.action.toUpperCase()} – ${h.userName} • ${fmt.dt(h.timestamp)}</div>
-          </div>
-        </div>`).join('');
-    }
-  }
+  if (!rec) return;
+  if (!hist.length) { rec.innerHTML='<p style="color:var(--muted);font-size:13px">Belum ada aktivitas</p>'; return; }
+  const icons = {tambah:'➕',edit:'✏️',hapus:'🗑️',pinjam:'📤',kembali:'📥'};
+  rec.innerHTML = hist.slice(0,8).map(h=>`
+    <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:15px">${icons[h.action]||'📌'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.itemNama||'–'}</div>
+        <div style="font-size:11px;color:var(--muted)">${(h.action||'').toUpperCase()} – ${h.userName} • ${fmt.dt(h.timestamp)}</div>
+      </div>
+    </div>`).join('');
+}
 
-  // ── Perlu Perhatian ──
+function renderDashboardAttn(items) {
   const at = document.getElementById('attn');
-  if (at) {
-    const rusakItems  = items.filter(i=>i.status==='rusak');
-    const pinjamItems = items.filter(i=>i.peminjaman?.dipinjam);
-    let html = '';
-    if (rusakItems.length) html += `
-      <div style="font-size:11.5px;font-weight:700;color:var(--danger);margin-bottom:5px">🔴 RUSAK (${rusakItems.length})</div>
-      ${rusakItems.slice(0,4).map(i=>`<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${i.nama} <span style="color:var(--muted);font-size:11px">${i.lokasi||''}</span></div>`).join('')}
-      ${rusakItems.length>4?`<div style="font-size:11px;color:var(--muted);margin-top:3px">+${rusakItems.length-4} lainnya</div>`:''}
-      <div style="height:10px"></div>`;
-    if (pinjamItems.length) html += `
-      <div style="font-size:11.5px;font-weight:700;color:var(--warn);margin-bottom:5px">🟡 DIPINJAM (${pinjamItems.length})</div>
-      ${pinjamItems.slice(0,4).map(i=>`<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${i.nama} <span style="color:var(--muted);font-size:11px">→ ${i.peminjaman?.peminjam||'–'}</span></div>`).join('')}`;
-    at.innerHTML = html || '<p style="color:var(--muted);font-size:13px">Tidak ada item yang perlu perhatian 🎉</p>';
-  }
+  if (!at) return;
+  const rusakItems  = items.filter(i=>i.status==='rusak');
+  const pinjamItems = items.filter(i=>(i.pinjamList||[]).length>0);
+  let html = '';
+  if (rusakItems.length) html += `
+    <div style="font-size:11.5px;font-weight:700;color:var(--danger);margin-bottom:5px">🔴 RUSAK (${rusakItems.length})</div>
+    ${rusakItems.slice(0,4).map(i=>`<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${i.nama} <span style="color:var(--muted);font-size:11px">${i.lokasi||''}</span></div>`).join('')}
+    ${rusakItems.length>4?`<div style="font-size:11px;color:var(--muted);margin-top:3px">+${rusakItems.length-4} lainnya</div>`:''}
+    <div style="height:10px"></div>`;
+  if (pinjamItems.length) html += `
+    <div style="font-size:11.5px;font-weight:700;color:var(--warn);margin-bottom:5px">🟡 DIPINJAM (${pinjamItems.length})</div>
+    ${pinjamItems.slice(0,4).map(i=>{
+      const pl = i.pinjamList||[];
+      return `<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${i.nama} → <span style="color:var(--muted)">${pl.map(p=>p.nama).join(', ')}</span></div>`;
+    }).join('')}`;
+  at.innerHTML = html || '<p style="color:var(--muted);font-size:13px">Tidak ada item yang perlu perhatian 🎉</p>';
 }
 
 // ── ITEMS TABLE ───────────────────────────────────────────────
