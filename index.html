@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SIV – Sistem Inventaris Vihara</title>
+  <title>SIMBA – Sistem Inventaris Tempat Ibadah</title>
 
   <!-- Firebase SDK v9 compat -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -260,10 +260,10 @@ const S = {
   _anonAuthOk  : false,
   _repairUser  : null,
   theme  : {
-    appTitle    : 'SIV',
-    appSubtitle : 'SISTEM INVENTARIS VIHARA',
+    appTitle    : 'SIMBA',
+    appSubtitle : 'SISTEM INVENTARIS IBADAH',
     logoType    : 'emoji',
-    logoEmoji   : '☸️',
+    logoEmoji   : '🕌',
     logoBase64  : '',
     colorPrimary: '#1B4332',
     colorAccent : '#C9A227',
@@ -674,7 +674,7 @@ async function doBackup() {
     },null,2)],{type:'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `backup-siv-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `backup-simba-${new Date().toISOString().slice(0,10)}.json`;
     a.click(); URL.revokeObjectURL(a.href);
     toast('Backup berhasil diunduh!');
   } catch(e){ toast('Gagal backup: '+e.message,'err'); }
@@ -716,6 +716,7 @@ function render() {
       {id:'dashboard',ic:'⊞',lbl:'Beranda'},
       {id:'barang',ic:'📦',lbl:'Barang'},
       {id:'cari',ic:'🔍',lbl:'Cari'},
+      {id:'peminjaman',ic:'🔄',lbl:'Pinjam'},
       {id:'notifikasi',ic:'🔔',lbl:'Notif'},
       ...((['superadmin','admin'].includes(r))?[{id:'laporan',ic:'📊',lbl:'Laporan'}]:[]),
     ];
@@ -728,7 +729,7 @@ function render() {
       <div class="main" style="flex:1;min-width:0;margin-left:256px">
         <!-- Topbar mobile only -->
         <div class="topbar-mobile">
-          <div style="font-size:13.5px;font-weight:700;color:var(--primary);margin-left:44px">${pageTitles[S.page]||'SIV'}</div>
+          <div style="font-size:13.5px;font-weight:700;color:var(--primary);margin-left:44px">${pageTitles[S.page]||'SIMBA'}</div>
           <div style="display:flex;gap:6px;align-items:center">
             ${S.page==='barang'?'<button class="btn ba" style="font-size:11.5px;padding:5px 10px" onclick="openAddItem()">+ Barang</button>':''}
             ${S.page==='pengguna'?`<button class="btn ba" style="font-size:11.5px;padding:5px 10px" onclick="go('form-pengguna')">+ Pengguna</button>`:''}
@@ -757,6 +758,7 @@ function tplSidebar() {
   const navs = [
     {id:'dashboard',    ic:'⊞',  lbl:'Dashboard',           roles:['superadmin','admin','manager']},
     {id:'barang',       ic:'📦', lbl:'Data Barang',          roles:['superadmin','admin','manager']},
+    {id:'peminjaman',   ic:'🔄', lbl:'Peminjaman Barang',    roles:['superadmin','admin','manager']},
     {id:'cari',         ic:'🔍', lbl:'Pencarian',            roles:['superadmin','admin','manager']},
     {id:'notifikasi',   ic:'🔔', lbl:'Notifikasi'+notifBadge,roles:['superadmin','admin','manager']},
     {id:'riwayat',      ic:'📋', lbl:'Riwayat Aktivitas',    roles:['superadmin','admin','manager']},
@@ -817,6 +819,7 @@ function tplPage() {
     case 'pengguna':     return tplPengguna();
     case 'form-pengguna':return tplFormPengguna();
     case 'pengaturan':   return tplPengaturan();
+    case 'peminjaman':   return tplPeminjaman();
     case 'notifikasi':   return tplNotifikasi();
     case 'master-jenis': return tplMasterJenis();
     case 'master-lokasi':return tplMasterLokasi();
@@ -907,6 +910,7 @@ const pageTitles = {
   notifikasi    : 'Notifikasi Perawatan',
   'master-jenis': 'Master Jenis Barang',
   'master-lokasi': 'Master Lokasi',
+  peminjaman     : 'Peminjaman Barang',
   'form-barang' : 'Form Barang',
   'form-pengguna': 'Form Pengguna',
 };
@@ -1032,17 +1036,14 @@ function tplFormBarang() {
             </div>`:''}
           </div>`:''}
 
-          <!-- TAMBAH PEMINJAMAN (edit mode) -->
+          <!-- INFO PEMINJAMAN — link ke halaman Peminjaman untuk tambah/kembalikan -->
           <div id="sec-pinjam-form" style="grid-column:1/-1;${bisDipinjam===false?'display:none':''}">
-            ${ed?`<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:12px 14px">
-              <div style="font-size:13px;font-weight:600;color:#1D4ED8;margin-bottom:8px">➕ Tambah Peminjaman</div>
-              <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end">
-                <div class="fgrp" style="margin:0"><label class="lbl">Nama Peminjam</label><input class="inp" id="pinjam-nama" placeholder="Nama orang / organisasi"></div>
-                <div class="fgrp" style="margin:0"><label class="lbl">Jumlah</label><input class="inp" type="number" id="pinjam-jml" value="1" min="1" style="width:80px"></div>
-                <button type="button" class="btn btn-primary" onclick="tambahPinjam('${it.id}')">Pinjam</button>
+            <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+              <div style="font-size:12.5px;color:#1D4ED8">
+                🔄 Untuk menambah atau mengembalikan peminjaman, gunakan menu <strong>Peminjaman Barang</strong>
               </div>
-            </div>`:
-            `<p style="font-size:12.5px;color:var(--muted)">Simpan barang dulu, lalu bisa kelola peminjaman dari tombol Edit.</p>`}
+              <button type="button" class="btn btn-primary" style="font-size:12px;padding:7px 14px;white-space:nowrap" onclick="go('peminjaman')">Ke Peminjaman →</button>
+            </div>
           </div>
 
         </div>
@@ -1186,6 +1187,128 @@ function tplFormPengguna() {
       </form>
     </div>
   </div>`;
+}
+
+// ── PEMINJAMAN BARANG ──────────────────────────────────────────
+function tplPeminjaman() {
+  const items  = (_items||[]).filter(i => i.bisaDipinjam !== false);
+  const active = items.filter(i => (i.pinjamList||[]).length > 0);
+  const avail  = items.filter(i => !(i.pinjamList||[]).length);
+
+  const cardItem = (it) => {
+    const pl          = it.pinjamList || [];
+    const totalPinjam = pl.reduce((s,p)=>s+p.jumlah, 0);
+    const stok        = Math.max(0, it.jumlah - totalPinjam);
+    return `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:600;font-size:14px">${it.nama}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">
+            ${it.jenis||'–'} · ${it.lokasi||'–'} · Kode: <span style="font-family:monospace">${it.kode||'–'}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;font-size:13px;flex-shrink:0">
+          <div style="text-align:center"><div style="font-weight:700;font-size:18px">${it.jumlah||0}</div><div style="color:var(--muted);font-size:11px">Total</div></div>
+          <div style="text-align:center"><div style="font-weight:700;font-size:18px;color:var(--warn)">${totalPinjam}</div><div style="color:var(--muted);font-size:11px">Dipinjam</div></div>
+          <div style="text-align:center"><div style="font-weight:700;font-size:18px;color:${stok>0?'var(--success)':'var(--danger)'}">${stok}</div><div style="color:var(--muted);font-size:11px">Tersedia</div></div>
+        </div>
+      </div>
+
+      ${pl.length ? `
+      <div style="margin:10px 0 8px;border-top:1px solid var(--border);padding-top:8px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:6px">SEDANG DIPINJAM:</div>
+        ${pl.map(p=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#FEF3C7;border-radius:8px;margin-bottom:5px">
+          <span style="font-size:15px">📤</span>
+          <div style="flex:1">
+            <span style="font-weight:600">${p.nama}</span>
+            <span style="color:var(--muted);font-size:12px"> — ${p.jumlah} unit · ${p.tgl||'–'}</span>
+          </div>
+          <button class="abt ad" onclick="kembalikanPinjamanPage('${it.id}','${p.id}','${p.nama.replace(/'/g,"\'")}')">Kembalikan</button>
+        </div>`).join('')}
+      </div>` : ''}
+
+      ${stok > 0 ? `
+      <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 12px;margin-top:8px">
+        <div style="font-size:12.5px;font-weight:600;color:#1D4ED8;margin-bottom:8px">➕ Tambah Peminjaman</div>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div style="flex:1;min-width:140px">
+            <div class="lbl">Nama Peminjam</div>
+            <input class="inp" id="pn-nama-${it.id}" placeholder="Nama orang / organisasi">
+          </div>
+          <div style="width:90px">
+            <div class="lbl">Jumlah</div>
+            <input class="inp" type="number" id="pn-jml-${it.id}" value="1" min="1" max="${stok}">
+          </div>
+          <button class="btn btn-primary" style="padding:9px 14px;white-space:nowrap"
+            onclick="tambahPinjamanPage('${it.id}')">📤 Pinjam</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Maksimal ${stok} unit tersedia</div>
+      </div>` : `<div style="margin-top:8px;padding:8px 12px;background:#FEF2F2;border-radius:8px;font-size:12.5px;color:var(--danger)">⚠️ Stok tidak tersedia</div>`}
+    </div>`;
+  };
+
+  return `
+  <div class="ph">
+    <div><h1 class="ff">Peminjaman Barang</h1><p>Kelola peminjaman barang yang bisa dipinjam</p></div>
+  </div>
+
+  <!-- Summary stats -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
+    <div class="sc" style="text-align:center">
+      <div style="font-size:28px;font-weight:700;color:var(--primary)">${items.length}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px">Barang Bisa Dipinjam</div>
+    </div>
+    <div class="sc" style="text-align:center">
+      <div style="font-size:28px;font-weight:700;color:var(--warn)">${active.length}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px">Sedang Dipinjam</div>
+    </div>
+    <div class="sc" style="text-align:center">
+      <div style="font-size:28px;font-weight:700;color:var(--success)">${avail.length}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px">Tersedia</div>
+    </div>
+  </div>
+
+  ${!items.length ? `
+  <div class="card" style="text-align:center;padding:40px">
+    <div style="font-size:40px;margin-bottom:10px">📦</div>
+    <p style="color:var(--muted)">Belum ada barang yang diizinkan untuk dipinjam.<br>
+    Buka <strong>Data Barang → Edit</strong> dan pilih "Bisa Dipinjam".</p>
+  </div>` : ''}
+
+  ${active.length ? `
+  <div style="font-size:13px;font-weight:700;color:var(--warn);margin-bottom:8px">🟡 Sedang Dipinjam (${active.length})</div>
+  ${active.map(it=>cardItem(it)).join('')}` : ''}
+
+  ${avail.length ? `
+  <div style="font-size:13px;font-weight:700;color:var(--success);margin:${active.length?'16px':0} 0 8px">🟢 Tersedia (${avail.length})</div>
+  ${avail.map(it=>cardItem(it)).join('')}` : ''}`;
+}
+
+async function tambahPinjamanPage(itemId) {
+  const nama = document.getElementById('pn-nama-'+itemId)?.value?.trim();
+  const jml  = parseInt(document.getElementById('pn-jml-'+itemId)?.value || 1);
+  if (!nama) { toast('Isi nama peminjam', 'err'); return; }
+  try {
+    await dbTambahPinjam(itemId, nama, jml);
+    toast('✓ Peminjaman berhasil dicatat!');
+    // Reload items dari Firestore lalu render ulang halaman
+    _items = await dbItems();
+    hitungNotif();
+    document.querySelector('.content').innerHTML = tplPeminjaman();
+  } catch(ex) { toast(ex.message, 'err'); }
+}
+
+async function kembalikanPinjamanPage(itemId, pinjamId, namaPeminjam) {
+  if (!confirm(`Kembalikan pinjaman dari "${namaPeminjam}"?`)) return;
+  try {
+    await dbKembalikanPinjam(itemId, pinjamId);
+    toast('✓ Barang dikembalikan!');
+    _items = await dbItems();
+    hitungNotif();
+    document.querySelector('.content').innerHTML = tplPeminjaman();
+  } catch(ex) { toast(ex.message, 'err'); }
 }
 
 // ── NOTIFIKASI ─────────────────────────────────────────────────
@@ -1377,7 +1500,7 @@ function tplPengaturan() {
       <!-- JUDUL -->
       <div class="fgrp">
         <label class="lbl">Nama / Judul Aplikasi</label>
-        <input class="inp" id="th-title" value="${t.appTitle}" placeholder="Contoh: Sistem Inventaris">
+        <input class="inp" id="th-title" value="${t.appTitle}" placeholder="Contoh: SIMBA">
       </div>
       <div class="fgrp">
         <label class="lbl">Sub-judul (Tagline)</label>
@@ -1503,7 +1626,7 @@ function tplPengaturan() {
 service cloud.firestore {
   match /databases/{database}/documents {
     // Hanya browser yang sudah sign-in (termasuk anonymous) yang bisa akses.
-    // Login user dikelola aplikasi SIV sendiri (username/password di Firestore).
+    // Login user dikelola aplikasi SIMBA sendiri (username/password di Firestore).
     // Semua koleksi hanya bisa diakses oleh browser yang sudah anonymous sign-in
     match /{document=**} {
       allow read, write: if request.auth != null;
@@ -1615,7 +1738,7 @@ function tplLogin() {
   <div class="login-wrap" style="background:${lg};min-height:100vh">
     <div style="text-align:center;width:100%;max-width:400px;padding:20px">
       <div style="margin-bottom:6px">${logoHtml('56px',true)}</div>
-      <div class="ff" style="color:var(--accent);font-size:32px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
+      <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
       <div style="color:rgba(255,255,255,.45);font-size:10.5px;letter-spacing:2px;margin-bottom:28px">${S.theme.appSubtitle}</div>
       <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:28px">
         <form onsubmit="handleLogin(event)">
@@ -1628,13 +1751,13 @@ function tplLogin() {
             <input class="inp" type="password" id="l-pw" placeholder="••••••••" required autocomplete="current-password">
           </div>
           <button type="submit" class="btn btn-accent" id="l-btn" style="width:100%;padding:11px;font-size:14.5px;margin-top:10px">
-            MASUK
+            Masuk ke ${S.theme.appTitle}
           </button>
           <div id="l-err" style="color:#fca5a5;font-size:13px;margin-top:10px;display:none"></div>
         </form>
       </div>
 
-      <div style="color:rgba(255,255,255,.2);font-size:11px;margin-top:14px">${S.theme.appTitle} V 1.8 © ${new Date().getFullYear()}</div>
+      <div style="color:rgba(255,255,255,.2);font-size:11px;margin-top:14px">${S.theme.appTitle} v2.0 © ${new Date().getFullYear()}</div>
     </div>
   </div>`;
 }
@@ -1648,7 +1771,7 @@ function tplSetup() {
       <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
       <div style="color:rgba(255,255,255,.65);font-size:13.5px;margin:8px 0 24px">Setup Awal – Buat Akun Super Admin</div>
       <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:28px;text-align:left">
-        <p style="color:rgba(255,255,255,.6);font-size:13px;margin-bottom:18px">Belum ada pengguna di sistem. Buat akun Super Admin untuk memulai SIV.</p>
+        <p style="color:rgba(255,255,255,.6);font-size:13px;margin-bottom:18px">Belum ada pengguna di sistem. Buat akun Super Admin untuk memulai SIMBA.</p>
         <form id="frm-setup" onsubmit="handleSetup(event)">
           <div class="fgrp"><label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Nama Lengkap</label>
             <input class="inp" id="su-nama" required placeholder="Nama admin">
@@ -1681,9 +1804,10 @@ function bindPage() {
     case 'riwayat':      loadHistory(); break;
     case 'laporan':      loadLaporan(S.lapTab); break;
     case 'pengguna':     loadUsers(); break;
-    case 'master-jenis': break;  // static
-    case 'master-lokasi':break;  // static
-    case 'notifikasi':   break;  // menggunakan _items cache
+    case 'master-jenis': break;
+    case 'master-lokasi':break;
+    case 'peminjaman':   loadPeminjaman(); break;
+    case 'notifikasi':   break;
   }
 }
 
@@ -1855,6 +1979,17 @@ async function submitUser(e) {
 // Simpan unsubscribe functions untuk realtime listeners
 let _unsubItems   = null;
 let _unsubHistory = null;
+
+async function loadPeminjaman() {
+  // Ambil data terbaru dari Firestore setiap kali halaman dibuka
+  try {
+    _items = await dbItems();
+    hitungNotif();
+    // Re-render content area saja
+    const ct = document.querySelector('.content');
+    if (ct) ct.innerHTML = tplPeminjaman();
+  } catch(e) { toast('Gagal memuat data: '+e.message, 'err'); }
+}
 
 function stopRealtimeListeners() {
   if (_unsubItems)   { _unsubItems();   _unsubItems   = null; }
@@ -2136,7 +2271,7 @@ function exportCSV() {
   const csv = rows.map(r=>r.map(c=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download = `riwayat-siv-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `riwayat-simba-${new Date().toISOString().slice(0,10)}.csv`;
   a.click(); URL.revokeObjectURL(a.href);
   toast('Export CSV berhasil!');
 }
@@ -2443,10 +2578,10 @@ async function saveTema() {
 async function resetTema() {
   if (!confirm('Reset tema ke tampilan default?')) return;
   const def = {
-    appTitle    : 'SIV',
-    appSubtitle : 'SISTEM INVENTARIS VIHARA',
+    appTitle    : 'SIMBA',
+    appSubtitle : 'SISTEM INVENTARIS IBADAH',
     logoType    : 'emoji',
-    logoEmoji   : '☸️',
+    logoEmoji   : '🕌',
     logoBase64  : '',
     colorPrimary: '#1B4332',
     colorAccent : '#C9A227',
