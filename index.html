@@ -2211,9 +2211,13 @@ async function doSearch() {
       if (t2   && it.tanggalDiperoleh && it.tanggalDiperoleh > t2) return false;
       // Filter peminjaman menggunakan pinjamList (sistem baru)
       const sedangDipinjam = (it.pinjamList||[]).length > 0;
-      if (pn === 'dipinjam' && !sedangDipinjam) return false;
-      if (pn === 'tersedia'  &&  sedangDipinjam) return false;
-      if (pn === 'tidak_bisa' && it.bisaDipinjam !== false) return false;
+      const bolehDipinjam  = it.bisaDipinjam !== false;
+      // 'dipinjam'   → harus bisa dipinjam DAN sedang dipinjam
+      if (pn === 'dipinjam'   && (!bolehDipinjam || !sedangDipinjam)) return false;
+      // 'tersedia'   → harus bisa dipinjam DAN belum ada yang pinjam
+      if (pn === 'tersedia'   && (!bolehDipinjam ||  sedangDipinjam)) return false;
+      // 'tidak_bisa' → dikunci tidak bisa dipinjam
+      if (pn === 'tidak_bisa' && bolehDipinjam) return false;
       return true;
     });
 
