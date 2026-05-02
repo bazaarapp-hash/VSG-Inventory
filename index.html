@@ -728,7 +728,7 @@ function render() {
       <div class="main" style="flex:1;min-width:0;margin-left:256px">
         <!-- Topbar mobile only -->
         <div class="topbar-mobile">
-          <div style="font-size:13.5px;font-weight:700;color:var(--primary);margin-left:44px">${pageTitles[S.page]||'SIMBA'}</div>
+          <div style="font-size:13.5px;font-weight:700;color:var(--primary);margin-left:44px">${pageTitles[S.page]||'SIV'}</div>
           <div style="display:flex;gap:6px;align-items:center">
             ${S.page==='barang'?'<button class="btn ba" style="font-size:11.5px;padding:5px 10px" onclick="openAddItem()">+ Barang</button>':''}
             ${S.page==='pengguna'?`<button class="btn ba" style="font-size:11.5px;padding:5px 10px" onclick="go('form-pengguna')">+ Pengguna</button>`:''}
@@ -1503,7 +1503,7 @@ function tplPengaturan() {
 service cloud.firestore {
   match /databases/{database}/documents {
     // Hanya browser yang sudah sign-in (termasuk anonymous) yang bisa akses.
-    // Login user dikelola aplikasi SIMBA sendiri (username/password di Firestore).
+    // Login user dikelola aplikasi SIV sendiri (username/password di Firestore).
     // Semua koleksi hanya bisa diakses oleh browser yang sudah anonymous sign-in
     match /{document=**} {
       allow read, write: if request.auth != null;
@@ -1648,7 +1648,7 @@ function tplSetup() {
       <div class="ff" style="color:var(--accent);font-size:38px;font-weight:700;line-height:1">${S.theme.appTitle}</div>
       <div style="color:rgba(255,255,255,.65);font-size:13.5px;margin:8px 0 24px">Setup Awal – Buat Akun Super Admin</div>
       <div style="background:rgba(255,255,255,.07);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:28px;text-align:left">
-        <p style="color:rgba(255,255,255,.6);font-size:13px;margin-bottom:18px">Belum ada pengguna di sistem. Buat akun Super Admin untuk memulai SIMBA.</p>
+        <p style="color:rgba(255,255,255,.6);font-size:13px;margin-bottom:18px">Belum ada pengguna di sistem. Buat akun Super Admin untuk memulai SIV.</p>
         <form id="frm-setup" onsubmit="handleSetup(event)">
           <div class="fgrp"><label style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-bottom:5px">Nama Lengkap</label>
             <input class="inp" id="su-nama" required placeholder="Nama admin">
@@ -2136,7 +2136,7 @@ function exportCSV() {
   const csv = rows.map(r=>r.map(c=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download = `riwayat-simba-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `riwayat-siv-${new Date().toISOString().slice(0,10)}.csv`;
   a.click(); URL.revokeObjectURL(a.href);
   toast('Export CSV berhasil!');
 }
@@ -2443,10 +2443,10 @@ async function saveTema() {
 async function resetTema() {
   if (!confirm('Reset tema ke tampilan default?')) return;
   const def = {
-    appTitle    : 'SIMBA',
-    appSubtitle : 'SISTEM INVENTARIS IBADAH',
+    appTitle    : 'SIV',
+    appSubtitle : 'SISTEM INVENTARIS VIHARA',
     logoType    : 'emoji',
-    logoEmoji   : '🕌',
+    logoEmoji   : '☸️',
     logoBase64  : '',
     colorPrimary: '#1B4332',
     colorAccent : '#C9A227',
