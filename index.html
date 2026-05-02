@@ -674,7 +674,7 @@ async function doBackup() {
     },null,2)],{type:'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `backup-siv-${t.appTitle}-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `backup-siv-${new Date().toISOString().slice(0,10)}.json`;
     a.click(); URL.revokeObjectURL(a.href);
     toast('Backup berhasil diunduh!');
   } catch(e){ toast('Gagal backup: '+e.message,'err'); }
