@@ -263,6 +263,7 @@ const S = {
     colorPrimary: '#1B4332',
     colorAccent : '#C9A227',
     colorBg     : '#F5F0E8',
+    fontSize    : 'normal',   // 'small' | 'normal' | 'large'
   }
 };
 
@@ -577,6 +578,9 @@ function applyTheme() {
   root.style.setProperty('--accent',    t.colorAccent);
   root.style.setProperty('--accent-l',  lighten(t.colorAccent, 28));
   root.style.setProperty('--bg',        t.colorBg);
+  // Ukuran font
+  const fs = {small:'12px', normal:'13.5px', large:'15.5px'}[t.fontSize||'normal'] || '13.5px';
+  document.body.style.fontSize = fs;
   document.title = t.appTitle + ' – Inventaris';
   document.querySelectorAll('.login-wrap').forEach(el=>{
     el.style.background = `linear-gradient(150deg,${darken(t.colorPrimary,20)} 0%,${t.colorPrimary} 45%,${lighten(t.colorPrimary,25)} 100%)`;
@@ -878,8 +882,24 @@ function tplBarang() {
 }
 
 // Jenis & Lokasi dimuat dari Firestore (fallback default)
-let JENIS_LIST = ['Perlengkapan Ibadah','Elektronik','Furnitur','Peralatan','Lainnya'];
+let JENIS_LIST  = ['Perlengkapan Ibadah','Elektronik','Furnitur','Peralatan','Lainnya'];
 let LOKASI_LIST = ['Ruang Utama','Ruang Kajian','Gudang','Selasar','Lainnya'];
+
+// Judul halaman
+const pageTitles = {
+  dashboard     : 'Dashboard',
+  barang        : 'Data Barang',
+  cari          : 'Pencarian Barang',
+  riwayat       : 'Riwayat Aktivitas',
+  laporan       : 'Laporan',
+  pengguna      : 'Manajemen Pengguna',
+  pengaturan    : 'Pengaturan & Backup',
+  notifikasi    : 'Notifikasi Perawatan',
+  'master-jenis': 'Master Jenis Barang',
+  'master-lokasi': 'Master Lokasi',
+  'form-barang' : 'Form Barang',
+  'form-pengguna': 'Form Pengguna',
+};
 
 // ── FORM BARANG ────────────────────────────────────────────────
 function tplFormBarang() {
@@ -1388,6 +1408,22 @@ function tplPengaturan() {
         </div>
       </div>
 
+      <!-- UKURAN FONT -->
+      <div class="fgrp" style="grid-column:1/-1">
+        <label class="lbl">Ukuran Font Aplikasi</label>
+        <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
+          ${['small','normal','large'].map(sz=>{
+            const lbl  = {small:'Kecil (12px)',normal:'Normal (13.5px)',large:'Besar (15.5px)'}[sz];
+            const act  = (S.theme.fontSize||'normal')===sz;
+            return `<button type="button" onclick="setFontSize('${sz}')"
+              style="padding:7px 16px;border-radius:8px;border:2px solid ${act?'var(--accent)':'var(--border)'};
+              background:${act?'#FEF3C7':'#fff'};font-weight:${act?700:400};cursor:pointer;
+              font-family:inherit;font-size:${sz==='small'?'12px':sz==='large'?'15.5px':'13.5px'};
+              transition:all .15s">${lbl}</button>`;
+          }).join('')}
+        </div>
+      </div>
+
       <!-- PREVIEW -->
       <div style="grid-column:1/-1">
         <div class="lbl" style="margin-bottom:8px">Preview Tema</div>
@@ -1587,12 +1623,7 @@ function tplLogin() {
           <div id="l-err" style="color:#fca5a5;font-size:13px;margin-top:10px;display:none"></div>
         </form>
       </div>
-      <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px;margin-top:14px;text-align:left">
-        <div style="color:rgba(255,255,255,.5);font-size:11px;font-weight:600;margin-bottom:4px">🔑 Default Login</div>
-        <div style="color:rgba(255,255,255,.65);font-size:12px">Username: <strong style="color:var(--accent)">superadmin</strong></div>
-        <div style="color:rgba(255,255,255,.65);font-size:12px">Password: <strong style="color:var(--accent)">superadmin123</strong></div>
-        <div style="color:rgba(255,255,255,.35);font-size:10.5px;margin-top:4px">Ganti password setelah masuk pertama kali</div>
-      </div>
+
       <div style="color:rgba(255,255,255,.2);font-size:11px;margin-top:14px">${S.theme.appTitle} v2.0 © ${new Date().getFullYear()}</div>
     </div>
   </div>`;
@@ -2353,6 +2384,12 @@ function uploadLogoImage(input) {
 }
 
 // ── Save / Reset ─────────────────────────────────────────────
+function setFontSize(sz) {
+  S.theme.fontSize = sz;
+  applyTheme();
+  go('pengaturan'); // refresh tombol pilih font
+}
+
 async function saveTema() {
   const newTheme = {
     appTitle    : document.getElementById('th-title')?.value.trim()   || S.theme.appTitle,
@@ -2363,6 +2400,7 @@ async function saveTema() {
     logoType    : S.theme.logoType,
     logoEmoji   : S.theme.logoEmoji,
     logoBase64  : S.theme.logoBase64,
+    fontSize    : S.theme.fontSize || 'normal',
   };
   try {
     await dbSaveSettings(newTheme);
@@ -2394,6 +2432,7 @@ async function resetTema() {
     colorPrimary: '#1B4332',
     colorAccent : '#C9A227',
     colorBg     : '#F5F0E8',
+    fontSize    : 'normal',
   };
   try {
     await dbSaveSettings(def);
