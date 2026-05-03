@@ -40,12 +40,11 @@
     /* ── SIDEBAR ── */
     .sidebar {
       background: var(--primary);
-      width: 256px; height: 100vh;
+      width: 256px; min-height: 100vh;
       position: fixed; left: 0; top: 0;
       transition: transform .3s ease; z-index: 50;
       overflow-y: auto; overflow-x: hidden;
       display: flex; flex-direction: column;
-      padding-bottom: env(safe-area-inset-bottom, 0px);
     }
     .nav-item {
       display: flex; align-items: center; gap: 10px;
@@ -133,44 +132,10 @@
     .ph p { font-size: 13px; color: var(--muted); margin-top: 3px; }
 
     /* ── MOBILE ── */
-    /* ── TOPBAR MOBILE ONLY ── */
-    .topbar-mobile{display:none}
-    @media(max-width:768px){
-      .topbar-mobile{display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;position:sticky;top:0;z-index:50}
-    }
-
-    /* ── MOBILE RESPONSIVE ── */
-    @media(max-width:768px){
-      .sidebar{transform:translateX(-100%);z-index:200;box-shadow:4px 0 24px rgba(0,0,0,.3)}
-      .sidebar.open{transform:translateX(0)}
-      .main{margin-left:0!important;padding:12px 10px 80px}
-      .sb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199;display:none}
-      .sb-overlay.show{display:block}
-      .grid4{grid-template-columns:repeat(2,1fr)!important}
-      .grid2{grid-template-columns:1fr!important}
-      .tbl{font-size:11.5px}
-      .tbl th,.tbl td{padding:7px 8px}
-      .card{padding:14px 12px}
-      .ph{flex-direction:column;align-items:flex-start}
-      .ph h1{font-size:19px}
-      .fbar{flex-direction:column}
-      .fbar>div{width:100%}
-      .fbar>.inp{width:100%!important}
-      .modal-box,.mbox{max-width:100%!important;margin:0;border-radius:14px 14px 0 0;max-height:95vh}
-      .overlay{align-items:flex-end;padding:0}
-    }
-    /* Hamburger button */
-    .ham-btn{display:none;position:fixed;top:12px;left:12px;z-index:300;background:var(--primary);border:none;border-radius:9px;width:40px;height:40px;cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:5px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
-    .ham-btn span{display:block;width:20px;height:2px;background:#fff;border-radius:2px;transition:all .2s}
-    @media(max-width:768px){.ham-btn{display:flex}}
-    /* Bottom nav mobile */
-    .bot-nav{display:none}
-    @media(max-width:768px){
-      .bot-nav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--primary);border-top:1px solid rgba(255,255,255,.1);z-index:100;padding:6px 0 env(safe-area-inset-bottom,6px)}
-      .bot-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;padding:4px 2px;opacity:.6;transition:opacity .15s;border:none;background:transparent;color:#fff;font-family:inherit}
-      .bot-nav-item.active{opacity:1}
-      .bot-nav-item .bni{font-size:18px}
-      .bot-nav-item .bnl{font-size:9px;font-weight:600;letter-spacing:.3px}
+    @media(max-width:768px) {
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; padding: 16px; }
     }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -206,17 +171,18 @@
 <div id="toasts"></div>
 
 <script>
+
 // ═══════════════════════════════════════════════════════════════
 //  FIREBASE CONFIGURATION — ganti nilai di bawah ini
 //  Lihat README.md untuk cara mendapatkan config Firebase
 // ═══════════════════════════════════════════════════════════════
 const FB_CONFIG = {
-  apiKey: "AIzaSyDiKUhFGh5lFB2xWIk_6eHG2OkLsZmFI2E",
-  authDomain: "inventoryvsg.firebaseapp.com",
-  projectId: "inventoryvsg",
-  storageBucket: "inventoryvsg.firebasestorage.app",
-  messagingSenderId: "73507994905",
-  appId: "1:73507994905:web:29d1c961a377bd70035988"
+  apiKey:            "GANTI_API_KEY",
+  authDomain:        "GANTI_PROJECT_ID.firebaseapp.com",
+  projectId:         "GANTI_PROJECT_ID",
+  storageBucket:     "GANTI_PROJECT_ID.appspot.com",
+  messagingSenderId: "GANTI_SENDER_ID",
+  appId:             "GANTI_APP_ID"
 };
 
 firebase.initializeApp(FB_CONFIG);
@@ -1111,30 +1077,41 @@ function tplRiwayat() {
   return `
   <div class="ph">
     <div><h1 class="ff">Riwayat Aktivitas</h1><p>Log semua perubahan data barang oleh admin &amp; manager</p></div>
-    <button class="btn btn-outline" onclick="exportCSV()">⬇ Export CSV</button>
+    <button class="btn btn-accent" onclick="exportCSVFiltered()" style="white-space:nowrap">&#x2B07; Export CSV</button>
   </div>
   <div class="card" style="margin-bottom:14px">
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       <div><div class="lbl">Filter Aksi</div>
-        <select class="inp" id="rv-act" style="width:150px" onchange="loadHistory()">
+        <select class="inp" id="rv-act" style="width:140px" onchange="loadHistory()">
           <option value="">Semua Aksi</option>
           <option value="tambah">Tambah</option>
           <option value="edit">Edit</option>
           <option value="hapus">Hapus</option>
+          <option value="pinjam">Pinjam</option>
+          <option value="kembali">Kembali</option>
         </select>
       </div>
       <div><div class="lbl">Filter Role</div>
-        <select class="inp" id="rv-role" style="width:180px" onchange="loadHistory()">
+        <select class="inp" id="rv-role" style="width:150px" onchange="loadHistory()">
           <option value="">Semua Role</option>
           <option value="superadmin">Super Admin</option>
           <option value="admin">Admin</option>
           <option value="manager">Manager</option>
         </select>
       </div>
+      <div><div class="lbl">Tanggal Dari</div>
+        <input class="inp" type="date" id="rv-t1" style="width:150px" onchange="loadHistory()">
+      </div>
+      <div><div class="lbl">Tanggal S/D</div>
+        <input class="inp" type="date" id="rv-t2" style="width:150px" onchange="loadHistory()">
+      </div>
+      <button class="btn btn-ghost" onclick="resetFilterRiwayat()">Reset</button>
     </div>
   </div>
-  <div class="card" style="overflow-x:auto"><div id="hist-tbl">Memuat…</div></div>`;
+  <div id="rv-info" style="margin-bottom:8px;font-size:12.5px;color:var(--muted);display:none;padding:8px 12px;background:#EFF6FF;border-radius:8px;border:1px solid #BFDBFE"></div>
+  <div class="card" style="overflow-x:auto"><div id="hist-tbl">Memuat...</div></div>`;
 }
+
 
 // ── LAPORAN ────────────────────────────────────────────────────
 function tplLaporan() {
@@ -2209,14 +2186,15 @@ async function doSearch() {
       if (rw   && it.jadwalPerawatan!==rw) return false;
       if (t1   && it.tanggalDiperoleh && it.tanggalDiperoleh < t1) return false;
       if (t2   && it.tanggalDiperoleh && it.tanggalDiperoleh > t2) return false;
-      // Filter peminjaman menggunakan pinjamList (sistem baru)
-      const sedangDipinjam = (it.pinjamList||[]).length > 0;
-      const bolehDipinjam  = it.bisaDipinjam !== false;
-      // 'dipinjam'   → harus bisa dipinjam DAN sedang dipinjam
-      if (pn === 'dipinjam'   && (!bolehDipinjam || !sedangDipinjam)) return false;
-      // 'tersedia'   → harus bisa dipinjam DAN belum ada yang pinjam
-      if (pn === 'tersedia'   && (!bolehDipinjam ||  sedangDipinjam)) return false;
-      // 'tidak_bisa' → dikunci tidak bisa dipinjam
+      // Filter peminjaman: hitung stok tersedia secara logis
+      const _totalPinjam  = (it.pinjamList||[]).reduce(function(s,p){return s+p.jumlah;},0);
+      const _stokTersedia = Math.max(0,(it.jumlah||0) - _totalPinjam);
+      const bolehDipinjam = it.bisaDipinjam !== false;
+      // dipinjam = bisa dipinjam DAN ada yang pinjam (stok berkurang)
+      if (pn === 'dipinjam'   && (!bolehDipinjam || _totalPinjam === 0)) return false;
+      // tersedia = bisa dipinjam DAN stok tersedia > 0 (total - dipinjam != 0)
+      if (pn === 'tersedia'   && (!bolehDipinjam || _stokTersedia === 0)) return false;
+      // tidak_bisa = barang yang dikunci tidak bisa dipinjam
       if (pn === 'tidak_bisa' && bolehDipinjam) return false;
       return true;
     });
@@ -2275,51 +2253,104 @@ function resetSearch() {
 }
 
 // ── HISTORY ───────────────────────────────────────────────────
-let _histCache = [];
+let _histCache    = [];
+let _histFiltered = [];
+
 async function loadHistory() {
   const el = document.getElementById('hist-tbl');
   if (!el) return;
-  el.innerHTML = '<p style="text-align:center;padding:20px;color:var(--muted)">Memuat…</p>';
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:var(--muted)">Memuat...</p>';
   try {
-    let h = await dbHistory();
-    _histCache = h;
-    const fa = document.getElementById('rv-act')?.value||'';
-    const fr = document.getElementById('rv-role')?.value||'';
-    if (fa) h = h.filter(x=>x.action===fa);
-    if (fr) h = h.filter(x=>x.userRole===fr);
-    if (!h.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada riwayat ditemukan</p>'; return; }
-    const ac = {tambah:'bdg-g',edit:'bdg-b',hapus:'bdg-r'};
-    el.innerHTML = `
-      <div style="margin-bottom:8px;font-size:13px;color:var(--muted)">Menampilkan <strong>${h.length}</strong> entri</div>
-      <table class="tbl">
-        <thead><tr><th>Waktu</th><th>Aksi</th><th>Nama Barang</th><th>Kode</th><th>Oleh</th><th>Role</th></tr></thead>
-        <tbody>
-        ${h.map(x=>`<tr>
-          <td style="font-size:12px;white-space:nowrap">${fmt.dt(x.timestamp)}</td>
-          <td><span class="bdg ${ac[x.action]||'bdg-n'}">${(x.action||'').toUpperCase()}</span></td>
-          <td style="font-weight:500">${x.itemNama||'–'}</td>
-          <td style="font-family:monospace;font-size:11.5px">${x.itemKode||'–'}</td>
-          <td>${x.userName||'–'}</td>
-          <td><span class="bdg bdg-p" style="font-size:10.5px">${roleLabel(x.userRole)}</span></td>
-        </tr>`).join('')}
-        </tbody>
-      </table>`;
-  } catch(e){ el.innerHTML=`<p style="color:var(--danger)">Error: ${e.message}</p>`; }
+    _histCache = await dbHistory();
+    applyHistoryFilter();
+  } catch(e) { el.innerHTML = '<p style="color:var(--danger)">Error: ' + e.message + '</p>'; }
 }
 
-function exportCSV() {
-  const h = _histCache;
-  if (!h.length) { toast('Belum ada data','inf'); return; }
-  const rows = [['Waktu','Aksi','Nama Barang','Kode','Oleh','Role'],...h.map(x=>[
-    fmt.dt(x.timestamp), x.action, x.itemNama, x.itemKode, x.userName, roleLabel(x.userRole)
-  ])];
-  const csv = rows.map(r=>r.map(c=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download = `riwayat-simba-${new Date().toISOString().slice(0,10)}.csv`;
-  a.click(); URL.revokeObjectURL(a.href);
-  toast('Export CSV berhasil!');
+function applyHistoryFilter() {
+  const el  = document.getElementById('hist-tbl');
+  const inf = document.getElementById('rv-info');
+  if (!el) return;
+  const fa = document.getElementById('rv-act')?.value  || '';
+  const fr = document.getElementById('rv-role')?.value || '';
+  const t1 = document.getElementById('rv-t1')?.value   || '';
+  const t2 = document.getElementById('rv-t2')?.value   || '';
+  let h = _histCache.slice();
+  if (fa) h = h.filter(function(x){ return x.action===fa; });
+  if (fr) h = h.filter(function(x){ return x.userRole===fr; });
+  if (t1||t2) h = h.filter(function(x){
+    if (!x.timestamp) return false;
+    const d   = x.timestamp && x.timestamp.toDate ? x.timestamp.toDate() : new Date(x.timestamp);
+    const tgl = d.toISOString().slice(0,10);
+    if (t1 && tgl < t1) return false;
+    if (t2 && tgl > t2) return false;
+    return true;
+  });
+  _histFiltered = h;
+  if (inf) {
+    const parts = [];
+    if (fa) parts.push('Aksi: ' + fa.toUpperCase());
+    if (fr) parts.push('Role: ' + roleLabel(fr));
+    if (t1) parts.push('Dari: ' + new Date(t1).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}));
+    if (t2) parts.push('S/D: '  + new Date(t2).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}));
+    if (parts.length) {
+      inf.style.display = 'block';
+      inf.innerHTML = 'Filter aktif: <strong>' + parts.join(' &middot; ') + '</strong> &mdash; ' + h.length + ' entri ditemukan';
+    } else {
+      inf.style.display = 'none';
+    }
+  }
+  if (!h.length) {
+    el.innerHTML = '<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada riwayat dengan filter ini</p>';
+    return;
+  }
+  const ac = {tambah:'bdg-g', edit:'bdg-b', hapus:'bdg-r', pinjam:'bdg-y', kembali:'bdg-b'};
+  let rows = '';
+  h.forEach(function(x){
+    rows += '<tr>'
+      + '<td style="font-size:12px;white-space:nowrap">' + fmt.dt(x.timestamp) + '</td>'
+      + '<td><span class="bdg ' + (ac[x.action]||'bdg-n') + '">' + (x.action||'').toUpperCase() + '</span></td>'
+      + '<td style="font-weight:500">' + (x.itemNama||'&ndash;') + '</td>'
+      + '<td style="font-family:monospace;font-size:11.5px">' + (x.itemKode||'&ndash;') + '</td>'
+      + '<td>' + (x.userName||'&ndash;') + '</td>'
+      + '<td><span class="bdg bdg-p" style="font-size:10.5px">' + roleLabel(x.userRole) + '</span></td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<div style="margin-bottom:8px;font-size:13px;color:var(--muted)">Menampilkan <strong>' + h.length + '</strong> dari <strong>' + _histCache.length + '</strong> entri</div>'
+    + '<table class="tbl"><thead><tr><th>Waktu</th><th>Aksi</th><th>Nama Barang</th><th>Kode</th><th>Oleh</th><th>Role</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table>';
 }
+
+function resetFilterRiwayat() {
+  ['rv-act','rv-role','rv-t1','rv-t2'].forEach(function(id){
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  applyHistoryFilter();
+}
+
+function exportCSVFiltered() {
+  const h = _histFiltered.length ? _histFiltered : _histCache;
+  if (!h.length) { toast('Belum ada data untuk diekspor', 'inf'); return; }
+  const t1 = document.getElementById('rv-t1')?.value || '';
+  const t2 = document.getElementById('rv-t2')?.value || '';
+  const suffix = (t1 && t2) ? (t1+'_sd_'+t2) : (t1 || t2 || new Date().toISOString().slice(0,10));
+  const rows = [['Waktu','Aksi','Nama Barang','Kode Barang','Dilakukan Oleh','Role']].concat(
+    h.map(function(x){
+      return [fmt.dt(x.timestamp),(x.action||'').toUpperCase(),x.itemNama||'',x.itemKode||'',x.userName||'',roleLabel(x.userRole)];
+    })
+  );
+  const csv = rows.map(function(r){
+    return r.map(function(c){ return '"'+String(c||'').replace(/"/g,'""')+'"'; }).join(',');
+  }).join('\n');
+  const bom = String.fromCharCode(0xFEFF);
+  const blob = new Blob([bom+csv],{type:'text/csv;charset=utf-8'});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'riwayat-simba-'+suffix+'.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Export CSV berhasil! (' + h.length + ' entri)');
+}
+function exportCSV() { exportCSVFiltered(); }
+
 
 // ── LAPORAN ───────────────────────────────────────────────────
 function switchTab(i) {
@@ -2702,6 +2733,7 @@ async function initApp() {
 }
 
 initApp();
+
 </script>
 </body>
 </html>
