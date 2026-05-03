@@ -10,6 +10,9 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
+  <!-- JsBarcode untuk label barang -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -214,6 +217,27 @@
     @media print {
       .sidebar, .ph button, .tabs, #filter-bar, .act-btn { display: none !important; }
       .main { margin-left: 0 !important; }
+    }
+
+    /* ── LABEL OVERLAY ── */
+    .label-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      z-index: 9000; display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .label-box {
+      background: #fff; border-radius: 16px; padding: 24px;
+      max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto;
+    }
+    .label-box h3 {
+      font-size: 16px; font-weight: 700; color: var(--primary);
+      margin-bottom: 16px; font-family: 'Amiri', serif;
+    }
+    /* Canvas label preview */
+    #label-canvas {
+      border: 2px dashed var(--border); border-radius: 8px;
+      display: block; margin: 0 auto 16px;
+      image-rendering: crisp-edges;
     }
   </style>
 </head>
@@ -2175,6 +2199,7 @@ function renderItemsTable(items) {
             <div style="display:flex;gap:4px">
               <button class="act-btn act-edit" onclick="editItem('${it.id}')">Edit</button>
               <button class="act-btn act-del" onclick="delItem('${it.id}','${it.nama.replace(/'/g,"\'")}')">Hapus</button>
+              <button class="abt" style="background:#F0FDF4;color:#166534;border-color:#BBF7D0" onclick="cetakLabel('${it.id}')">🏷️</button>
             </div>
           </td>
         </tr>`;
@@ -2748,6 +2773,258 @@ async function ubahPassword() {
     document.getElementById('cp-new').value = '';
     document.getElementById('cp-confirm').value = '';
   } catch(e) { toast(e.message, 'err'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CETAK LABEL BARANG (3cm x 10cm)
+// ═══════════════════════════════════════════════════════════════
+
+// Dimensi label: 10cm lebar x 3cm tinggi (landscape)
+// Pada 96dpi: 378px x 113px — pakai 3x scale → 1134px x 339px
+const LABEL_W_CM = 10, LABEL_H_CM = 3;
+const DPI = 300;
+const PX_PER_CM = DPI / 2.54;
+const LABEL_W = Math.round(LABEL_W_CM * PX_PER_CM); // ~1181px
+const LABEL_H = Math.round(LABEL_H_CM * PX_PER_CM); // ~354px
+
+async function cetakLabel(itemId) {
+  const item = _items.find(i=>i.id===itemId) || await dbItem(itemId);
+  if (!item) { toast('Barang tidak ditemukan','err'); return; }
+
+  // Buat overlay
+  const ov = document.createElement('div');
+  ov.className = 'label-overlay';
+  ov.id = 'label-ov';
+  ov.innerHTML = `
+    <div class="label-box">
+      <h3>🏷️ Label Barang — ${item.nama}</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+        Ukuran cetak: <strong>10cm &times; 3cm</strong> (landscape) &nbsp;·&nbsp; 300 DPI
+      </p>
+      <canvas id="label-canvas"></canvas>
+      <div id="label-multi" style="margin-bottom:12px">
+        <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:5px">Jumlah label:</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="label-qty" value="1" min="1" max="50"
+            class="inp" style="width:80px" onchange="updateLabelPreview('${itemId}')">
+          <span style="font-size:12px;color:var(--muted)">lembar (maks 50)</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-accent" onclick="downloadLabel()">⬇ Download JPEG</button>
+        <button class="btn btn-primary" onclick="printLabel()">🖨️ Cetak</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('label-ov').remove()">✕ Tutup</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  // Simpan item di window untuk akses dari fungsi lain
+  window._labelItem = item;
+
+  // Render canvas
+  await renderLabelCanvas(item);
+}
+
+async function renderLabelCanvas(item) {
+  const canvas = document.getElementById('label-canvas');
+  if (!canvas) return;
+
+  canvas.width  = LABEL_W;
+  canvas.height = LABEL_H;
+  // Preview di layar ~60% ukuran asli
+  canvas.style.width  = Math.round(LABEL_W * 0.55) + 'px';
+  canvas.style.height = Math.round(LABEL_H * 0.55) + 'px';
+
+  const ctx = canvas.getContext('2d');
+
+  // Background putih
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, LABEL_W, LABEL_H);
+
+  // Border tipis
+  ctx.strokeStyle = '#cccccc';
+  ctx.lineWidth   = 3;
+  ctx.strokeRect(6, 6, LABEL_W-12, LABEL_H-12);
+
+  // ── Barcode ──────────────────────────────────────────────────
+  // Buat SVG barcode sementara
+  const svgEl = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  const kode  = item.kode || 'NOCODE';
+  try {
+    JsBarcode(svgEl, kode, {
+      format       : 'CODE128',
+      width        : 3,
+      height       : Math.round(LABEL_H * 0.42),
+      displayValue : false,
+      margin       : 0,
+    });
+  } catch(e) {
+    JsBarcode(svgEl, 'SIMBA', { format:'CODE128', width:3, height:Math.round(LABEL_H*0.42), displayValue:false, margin:0 });
+  }
+
+  // Konversi SVG → gambar di canvas
+  const svgData = new XMLSerializer().serializeToString(svgEl);
+  const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
+  const svgUrl  = URL.createObjectURL(svgBlob);
+
+  await new Promise((res) => {
+    const img = new Image();
+    img.onload = () => {
+      // Barcode di kiri
+      const bcW    = Math.round(LABEL_W * 0.40);
+      const bcH    = Math.round(LABEL_H * 0.55);
+      const bcX    = 28;
+      const bcY    = Math.round((LABEL_H - bcH) / 2);
+      ctx.drawImage(img, bcX, bcY, bcW, bcH);
+      URL.revokeObjectURL(svgUrl);
+      res();
+    };
+    img.src = svgUrl;
+  });
+
+  // ── Kode barang (teks bawah barcode) ────────────────────────
+  const bcX    = 28;
+  const bcW    = Math.round(LABEL_W * 0.40);
+  const codeY  = Math.round(LABEL_H * 0.84);
+  ctx.fillStyle   = '#000000';
+  ctx.font        = 'bold ' + Math.round(LABEL_H * 0.105) + 'px monospace';
+  ctx.textAlign   = 'center';
+  ctx.fillText(kode, bcX + bcW/2, codeY);
+
+  // ── Divider vertikal ─────────────────────────────────────────
+  const divX = Math.round(LABEL_W * 0.44);
+  ctx.strokeStyle = '#dddddd';
+  ctx.lineWidth   = 2;
+  ctx.beginPath();
+  ctx.moveTo(divX, 20);
+  ctx.lineTo(divX, LABEL_H - 20);
+  ctx.stroke();
+
+  // ── Info teks kanan ──────────────────────────────────────────
+  const textX  = divX + 28;
+  const maxW   = LABEL_W - textX - 20;
+  const lineH  = Math.round(LABEL_H * 0.215);
+  ctx.textAlign = 'left';
+
+  // Nama barang — bold, besar
+  ctx.fillStyle = '#111111';
+  ctx.font      = 'bold ' + Math.round(LABEL_H * 0.152) + 'px DM Sans, sans-serif';
+  const nama    = item.nama || 'Nama Barang';
+  const namaLines = wrapText(ctx, nama, maxW);
+  namaLines.slice(0,2).forEach((line, i) => {
+    ctx.fillText(line, textX, 68 + i * Math.round(lineH*1.05));
+  });
+
+  // Lokasi
+  const lokasiY = 68 + Math.min(namaLines.length,2) * Math.round(lineH*1.05) + 16;
+  ctx.fillStyle = '#555555';
+  ctx.font      = Math.round(LABEL_H * 0.118) + 'px DM Sans, sans-serif';
+  ctx.fillText('📍 ' + (item.lokasi || '—'), textX, lokasiY);
+
+  // Tanggal tercatat
+  const tglRaw = item.createdAt?.toDate?.() || (item.createdAt ? new Date(item.createdAt) : new Date());
+  const tglStr = tglRaw.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+  ctx.fillStyle = '#888888';
+  ctx.font      = Math.round(LABEL_H * 0.10) + 'px DM Sans, sans-serif';
+  ctx.fillText('📅 ' + tglStr, textX, lokasiY + Math.round(lineH * 1.05));
+
+  // Jenis barang (kecil di pojok kanan bawah)
+  ctx.fillStyle = '#aaaaaa';
+  ctx.font      = Math.round(LABEL_H * 0.092) + 'px DM Sans, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText((item.jenis || ''), LABEL_W - 20, LABEL_H - 22);
+}
+
+// Helper: wrap teks agar tidak melebihi maxWidth
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(' ');
+  const lines = [];
+  let cur = '';
+  words.forEach(w => {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > maxWidth && cur) {
+      lines.push(cur); cur = w;
+    } else { cur = test; }
+  });
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+async function updateLabelPreview(itemId) {
+  const item = window._labelItem;
+  if (item) await renderLabelCanvas(item);
+}
+
+function downloadLabel() {
+  const canvas = document.getElementById('label-canvas');
+  if (!canvas) return;
+  const qty    = parseInt(document.getElementById('label-qty')?.value || 1);
+  const item   = window._labelItem;
+  if (!item) return;
+
+  if (qty === 1) {
+    // Download langsung
+    const link = document.createElement('a');
+    link.download = 'label-' + (item.kode || item.nama).replace(/\s+/g,'-') + '.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+    toast('Label berhasil diunduh!');
+    return;
+  }
+
+  // Multi-label: gabungkan secara vertikal dalam 1 file JPEG
+  const totalH = LABEL_H * qty + 10 * (qty - 1);
+  const combined = document.createElement('canvas');
+  combined.width  = LABEL_W;
+  combined.height = totalH;
+  const ctx2 = combined.getContext('2d');
+  ctx2.fillStyle = '#ffffff';
+  ctx2.fillRect(0,0,LABEL_W,totalH);
+  for (let i=0; i<qty; i++) {
+    ctx2.drawImage(canvas, 0, i*(LABEL_H+10));
+  }
+  const link = document.createElement('a');
+  link.download = 'label-' + (item.kode||item.nama).replace(/\s+/g,'-') + '-x'+qty+'.jpg';
+  link.href = combined.toDataURL('image/jpeg', 0.95);
+  link.click();
+  toast('Download ' + qty + ' label berhasil!');
+}
+
+function printLabel() {
+  const canvas = document.getElementById('label-canvas');
+  const item   = window._labelItem;
+  const qty    = parseInt(document.getElementById('label-qty')?.value || 1);
+  if (!canvas || !item) return;
+
+  const imgSrc = canvas.toDataURL('image/jpeg', 0.95);
+  const labels = Array(qty).fill(`<img src="${imgSrc}" style="width:10cm;height:3cm;display:block;margin-bottom:2mm;page-break-inside:avoid">`).join('');
+
+  const w = window.open('','_blank','width=600,height=500');
+  w.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>Label Barang — ${item.nama}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#fff; font-family:sans-serif; }
+  .page { padding: 5mm; }
+  img { border:1px solid #eee; display:block; }
+  @page { size: auto; margin: 5mm; }
+  @media print {
+    body { margin:0; }
+    .no-print { display:none; }
+  }
+</style>
+</head><body>
+<div class="no-print" style="padding:12px;background:#f5f5f5;margin-bottom:10px;display:flex;gap:10px;align-items:center">
+  <strong>Label: ${item.nama}</strong> &nbsp;·&nbsp; ${qty} lembar
+  <button onclick="window.print()" style="margin-left:auto;padding:7px 16px;background:#1B4332;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px">🖨️ Print</button>
+  <button onclick="window.close()" style="padding:7px 16px;background:#eee;border:none;border-radius:7px;cursor:pointer;font-size:13px">✕ Tutup</button>
+</div>
+<div class="page">${labels}</div>
+</body></html>`);
+  w.document.close();
+  toast('Halaman cetak dibuka!');
 }
 
 // ═══════════════════════════════════════════════════════════════
