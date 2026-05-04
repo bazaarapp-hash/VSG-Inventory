@@ -255,8 +255,6 @@
 //  FIREBASE CONFIGURATION — ganti nilai di bawah ini
 //  Lihat README.md untuk cara mendapatkan config Firebase
 // ═══════════════════════════════════════════════════════════════
-
-// Your web app's Firebase configuration
 const FB_CONFIG = {
   apiKey: "AIzaSyDiKUhFGh5lFB2xWIk_6eHG2OkLsZmFI2E",
   authDomain: "inventoryvsg.firebaseapp.com",
@@ -2198,7 +2196,7 @@ function renderItemsTable(items) {
           <td>
             <div style="display:flex;gap:4px">
               <button class="act-btn act-edit" onclick="editItem('${it.id}')">Edit</button>
-              <button class="act-btn act-del" onclick="delItem('${it.id}','${it.nama.replace(/'/g,"\'")}')">Hapus</button>
+              ${['superadmin','admin'].includes(S.user?.role) ? `<button class="act-btn act-del" onclick="delItem('${it.id}','${it.nama.replace(/'/g,"\\'")}')">Hapus</button>` : ''}
               <button class="abt" style="background:#F0FDF4;color:#166534;border-color:#BBF7D0" onclick="cetakLabel('${it.id}')">🏷️</button>
             </div>
           </td>
@@ -2235,8 +2233,25 @@ async function editItem(id) {
 }
 
 function delItem(id, nama) {
-  if (!confirm(`Hapus barang "${nama}"?\n\nTindakan ini akan dicatat ke riwayat.`)) return;
+  // Validasi role
+  const role = S.user?.role;
+  if (!['superadmin','admin'].includes(role)) {
+    toast('Anda tidak memiliki izin untuk menghapus barang', 'err');
+    return;
+  }
+
+  // Cek apakah sedang dipinjam
   const it = _items.find(i=>i.id===id);
+  if (it) {
+    const totalPinjam = (it.pinjamList||[]).reduce((s,p)=>s+p.jumlah,0);
+    if (totalPinjam > 0) {
+      const peminjam = (it.pinjamList||[]).map(p=>p.nama).join(', ');
+      toast(`Tidak bisa dihapus — "${nama}" sedang dipinjam oleh: ${peminjam}`, 'err');
+      return;
+    }
+  }
+
+  if (!confirm(`Hapus barang "${nama}"?\n\nTindakan ini akan dicatat ke riwayat.`)) return;
   dbDeleteItem(id, it)
     .then(()=>{ toast('Barang dihapus'); loadItems(); })
     .catch(e=>toast('Gagal: '+e.message,'err'));
@@ -2922,8 +2937,10 @@ async function renderLabelCanvas(item) {
   ctx.fillText('📍 ' + (item.lokasi || '—'), textX, lokasiY);
 
   // Tanggal tercatat
-  const tglRaw = item.createdAt?.toDate?.() || (item.createdAt ? new Date(item.createdAt) : new Date());
-  const tglStr = tglRaw.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+  // Gunakan tanggal diperoleh (bukan tanggal input)
+  const tglStr = item.tanggalDiperoleh
+    ? new Date(item.tanggalDiperoleh).toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'})
+    : '—';
   ctx.fillStyle = '#888888';
   ctx.font      = Math.round(LABEL_H * 0.10) + 'px DM Sans, sans-serif';
   ctx.fillText('📅 ' + tglStr, textX, lokasiY + Math.round(lineH * 1.05));
