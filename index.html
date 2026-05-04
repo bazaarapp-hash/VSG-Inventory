@@ -270,6 +270,12 @@ const db   = firebase.firestore();
 const FS   = firebase.firestore;
 
 // ── Simple hash (cukup untuk app inventaris lokal) ──────────
+// SHA-256 via Web Crypto API (async)
+async function secureHash(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+// Sync wrapper — dipakai hanya untuk backward compat sementara
 function simpleHash(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) {
@@ -410,7 +416,7 @@ async function initDefaultAdmin() {
       uid: defaultId,
       nama: 'Super Admin',
       username: 'superadmin',
-      passwordHash: simpleHash('superadmin123'),
+      passwordHash: await secureHash('superadmin123'),
       role: 'superadmin',
       active: true,
       createdAt: FS.FieldValue.serverTimestamp(),
@@ -423,16 +429,78 @@ async function initDefaultAdmin() {
   }
 }
 
+const MAX_ATTEMPTS = 5;       // Maks percobaan gagal
+const LOCK_MINUTES = 30;      // Durasi kunci otomatis (menit)
+
 async function doLogin(username, pw) {
-  const hash = simpleHash(pw);
   // Cari user berdasarkan username
   const snap = await db.collection('users')
     .where('username', '==', username.trim().toLowerCase())
     .limit(1).get();
   if (snap.empty) throw new Error('Username tidak ditemukan');
-  const data = snap.docs[0].data();
+
+  const docRef = snap.docs[0].ref;
+  const data   = snap.docs[0].data();
+  const now    = new Date();
+
+  // Cek akun nonaktif
   if (data.active === false) throw new Error('Akun dinonaktifkan. Hubungi administrator.');
-  if (data.passwordHash !== hash) throw new Error('Password salah');
+
+  // Cek terkunci
+  if (data.locked === true) {
+    if (data.lockedUntil) {
+      const until = data.lockedUntil.toDate ? data.lockedUntil.toDate() : new Date(data.lockedUntil);
+      if (now < until) {
+        const sisaMenit = Math.ceil((until - now) / 60000);
+        throw new Error(
+          'Akun terkunci karena terlalu banyak percobaan gagal.\n' +
+          'Kunci otomatis lepas dalam ' + sisaMenit + ' menit, atau hubungi Admin untuk dibuka.'
+        );
+      } else {
+        // Kunci sudah kedaluwarsa — lepas otomatis
+        await docRef.update({ locked: false, failedAttempts: 0, lockedUntil: null });
+        data.locked = false; data.failedAttempts = 0;
+      }
+    } else {
+      throw new Error('Akun terkunci. Hubungi Super Admin atau Admin untuk membukanya.');
+    }
+  }
+
+  // Cek password — coba SHA-256 dulu, fallback ke simpleHash (migrasi)
+  const sha256Hash = await secureHash(pw);
+  const oldHash    = simpleHash(pw);
+  const match      = data.passwordHash === sha256Hash || data.passwordHash === oldHash;
+
+  if (!match) {
+    // Tambah hitungan gagal
+    const attempts = (data.failedAttempts || 0) + 1;
+    const updates  = { failedAttempts: attempts, lastFailedAt: FS.FieldValue.serverTimestamp() };
+
+    if (attempts >= MAX_ATTEMPTS) {
+      // Kunci akun
+      const lockUntil = new Date(now.getTime() + LOCK_MINUTES * 60000);
+      updates.locked      = true;
+      updates.lockedAt    = FS.FieldValue.serverTimestamp();
+      updates.lockedUntil = lockUntil;
+      await docRef.update(updates);
+      throw new Error(
+        'Password salah. Akun terkunci selama ' + LOCK_MINUTES + ' menit ' +
+        'karena ' + MAX_ATTEMPTS + 'x percobaan gagal.\nHubungi Admin untuk membuka lebih cepat.'
+      );
+    } else {
+      await docRef.update(updates);
+      const sisa = MAX_ATTEMPTS - attempts;
+      throw new Error('Password salah. Sisa percobaan: ' + sisa + ' kali lagi.');
+    }
+  }
+
+  // Login berhasil — reset hitungan gagal + upgrade hash ke SHA-256 jika masih pakai lama
+  const resetUpdate = { failedAttempts: 0, locked: false, lastLogin: FS.FieldValue.serverTimestamp() };
+  if (data.passwordHash === oldHash && data.passwordHash !== sha256Hash) {
+    resetUpdate.passwordHash = sha256Hash; // migrasi otomatis ke SHA-256
+  }
+  await docRef.update(resetUpdate);
+
   return { ...data, id: snap.docs[0].id };
 }
 
@@ -534,14 +602,17 @@ async function dbCreateUser(data) {
   const chk = await db.collection('users')
     .where('username','==',data.username.trim().toLowerCase()).limit(1).get();
   if (!chk.empty) throw new Error('Username sudah digunakan');
-  const id = 'u_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
+  const id   = 'u_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
+  const hash = await secureHash(data.password);
   await db.collection('users').doc(id).set({
     uid: id,
     nama: data.nama,
     username: data.username.trim().toLowerCase(),
-    passwordHash: simpleHash(data.password),
+    passwordHash: hash,
     role: data.role,
     active: true,
+    failedAttempts: 0,
+    locked: false,
     createdAt: FS.FieldValue.serverTimestamp(),
     createdBy: S.user.uid,
     createdByName: S.user.nama,
@@ -554,20 +625,36 @@ async function dbUpdateUser(id, data) {
     updatedAt: FS.FieldValue.serverTimestamp(), updatedBy: S.user.uid,
   };
   if (data.username) upd.username = data.username.trim().toLowerCase();
-  if (data.password) upd.passwordHash = simpleHash(data.password);
+  if (data.password) upd.passwordHash = await secureHash(data.password);
   await db.collection('users').doc(id).update(upd);
 }
 async function dbDeleteUser(id) {
   if (id === S.user.uid || id === S.user.id) throw new Error('Tidak bisa hapus akun sendiri');
   await db.collection('users').doc(id).delete();
 }
+// ── Unlock akun yang terkunci (oleh Admin/SuperAdmin) ─────────
+async function dbUnlockUser(userId) {
+  await db.collection('users').doc(userId).update({
+    locked        : false,
+    failedAttempts: 0,
+    lockedUntil   : null,
+    lockedAt      : null,
+    unlockedAt    : FS.FieldValue.serverTimestamp(),
+    unlockedBy    : S.user.uid,
+    unlockedByName: S.user.nama,
+  });
+}
+
 async function dbChangeMyPassword(oldPw, newPw) {
   // Verifikasi password lama dulu
   const doc = await db.collection('users').doc(S.user.id || S.user.uid).get();
   if (!doc.exists) throw new Error('Akun tidak ditemukan');
-  if (doc.data().passwordHash !== simpleHash(oldPw)) throw new Error('Password lama salah');
+  const oldHash = simpleHash(oldPw);
+  const oldHashNew = await secureHash(oldPw);
+  if (doc.data().passwordHash !== oldHash && doc.data().passwordHash !== oldHashNew) throw new Error('Password lama salah');
+  const newHash = await secureHash(newPw);
   await db.collection('users').doc(S.user.id || S.user.uid).update({
-    passwordHash: simpleHash(newPw),
+    passwordHash: newHash,
     updatedAt: FS.FieldValue.serverTimestamp(),
   });
 }
@@ -1907,7 +1994,8 @@ async function handleLogin(e) {
     saveSession(S.user);
     go('dashboard');
   } catch(ex) {
-    err.textContent = ex.message || 'Login gagal';
+    // Tampilkan pesan multiline dengan benar
+    err.innerHTML = (ex.message || 'Login gagal').replace(/\n/g,'<br>');
     err.style.display = 'block';
     btn.innerHTML = 'Masuk ke ' + S.theme.appTitle;
     btn.disabled = false;
@@ -2571,28 +2659,49 @@ async function loadUsers() {
   try {
     const users = await dbUsers();
     if (!users.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada pengguna</p>'; return; }
-    el.innerHTML = `
-      <table class="tbl">
-        <thead><tr><th>Nama</th><th>Username</th><th>Role</th><th>Status</th><th>Dibuat</th><th>Aksi</th></tr></thead>
-        <tbody>
-        ${users.map(u=>`<tr>
-          <td style="font-weight:500">${u.nama} ${(u.uid===S.user?.uid||u.id===S.user?.id)?'<span class="bdg bdg-b" style="font-size:10px">Anda</span>':''}</td>
-          <td style="font-size:12.5px;color:var(--muted);font-family:monospace">${u.username||'–'}</td>
-          <td><span class="bdg bdg-p">${roleLabel(u.role)}</span></td>
-          <td><span class="bdg ${u.active!==false?'bdg-g':'bdg-r'}">${u.active!==false?'Aktif':'Nonaktif'}</span></td>
-          <td style="font-size:12px">${fmt.date(u.createdAt)}</td>
-          <td>
-            ${(u.uid!==S.user?.uid&&u.id!==S.user?.id)?`
-              <div style="display:flex;gap:5px">
-                <button class="act-btn act-edit" onclick="editUser('${u.id||u.uid}')">Edit</button>
-                <button class="act-btn act-del" onclick="delUser('${u.id||u.uid}','${u.nama.replace(/'/g,"\\'") }')">Hapus</button>
-              </div>`:'–'}
-          </td>
-        </tr>`).join('')}
-        </tbody>
-      </table>`;
-  } catch(e){ el.innerHTML=`<p style="color:var(--danger)">Error: ${e.message}</p>`; }
+    let rows = '';
+    users.forEach(function(u) {
+      const isMe     = u.uid===S.user?.uid || u.id===S.user?.id;
+      const locked   = u.locked === true;
+      const attempts = u.failedAttempts || 0;
+      const lastLogin= u.lastLogin ? fmt.dt(u.lastLogin) : '–';
+      const nama_esc = (u.nama||'').replace(/'/g,"\'");
+      rows += '<tr>'
+        + '<td style="font-weight:500">' + u.nama + (isMe?' <span class="bdg bdg-b" style="font-size:10px">Anda</span>':'') + '</td>'
+        + '<td style="font-size:12.5px;color:var(--muted);font-family:monospace">' + (u.username||'–') + '</td>'
+        + '<td><span class="bdg bdg-p">' + roleLabel(u.role) + '</span></td>'
+        + '<td>'
+          + (u.active===false
+              ? '<span class="bdg bdg-r">Nonaktif</span>'
+              : locked
+                ? '<span class="bdg bdg-r">🔒 Terkunci</span>'
+                : '<span class="bdg bdg-g">Aktif</span>')
+        + '</td>'
+        + '<td style="font-size:11px">'
+          + (locked
+              ? '<span style="color:var(--danger)">Terkunci</span>'
+              : attempts > 0
+                ? '<span style="color:var(--warn)">Gagal: '+attempts+'x</span>'
+                : '<span style="color:var(--muted)">Login: '+lastLogin+'</span>')
+        + '</td>'
+        + '<td style="font-size:11.5px">' + fmt.date(u.createdAt) + '</td>'
+        + '<td>'
+          + (!isMe
+            ? '<div style="display:flex;gap:4px;flex-wrap:wrap">'
+              + '<button class="act-btn act-edit" onclick="editUser(' + JSON.stringify(u.id||u.uid) + ')">Edit</button>'
+              + (locked ? '<button class="abt" style="background:#FEF9C3;color:#92400E;border-color:#FDE68A;font-size:11px" onclick="unlockUser(' + JSON.stringify(u.id||u.uid) + ',' + JSON.stringify(u.nama) + ')">🔓 Buka</button>' : '')
+              + '<button class="act-btn act-del" onclick="delUser(' + JSON.stringify(u.id||u.uid) + ',' + JSON.stringify(u.nama) + ')">Hapus</button>'
+              + '</div>'
+            : '–')
+        + '</td>'
+        + '</tr>';
+    });
+    el.innerHTML = '<table class="tbl"><thead><tr>'
+      + '<th>Nama</th><th>Username</th><th>Role</th><th>Status</th><th>Keamanan</th><th>Dibuat</th><th>Aksi</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  } catch(e) { el.innerHTML = '<p style="color:var(--danger)">Error: '+e.message+'</p>'; }
 }
+
 
 async function editUser(id) {
   const d = await db.collection('users').doc(id).get();
@@ -2600,8 +2709,15 @@ async function editUser(id) {
 }
 
 function delUser(id, nama) {
-  if (!confirm(`Hapus pengguna "${nama}"?`)) return;
-  dbDeleteUser(id).then(()=>{ toast('Pengguna dihapus'); loadUsers(); }).catch(e=>toast(e.message,'err'));
+  if (!confirm('Hapus pengguna "'+nama+'"?')) return;
+  dbDeleteUser(id).then(function(){ toast('Pengguna dihapus'); loadUsers(); }).catch(function(e){ toast(e.message,'err'); });
+}
+
+function unlockUser(id, nama) {
+  if (!confirm('Buka kunci akun "'+nama+'"?\nSemua hitungan percobaan gagal akan direset.')) return;
+  dbUnlockUser(id)
+    .then(function(){ toast('✓ Akun "'+nama+'" berhasil dibuka!'); loadUsers(); })
+    .catch(function(e){ toast('Gagal: '+e.message,'err'); });
 }
 
 // ── PENGATURAN HANDLERS ───────────────────────────────────────
