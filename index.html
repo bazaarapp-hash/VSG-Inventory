@@ -2653,44 +2653,44 @@ function renderLapGroup(groups, title) {
 }
 
 // ── USERS ─────────────────────────────────────────────────────
+let _usersCache = [];
+
 async function loadUsers() {
   const el = document.getElementById('usr-tbl');
   if (!el) return;
   try {
     const users = await dbUsers();
+    _usersCache = users;
     if (!users.length) { el.innerHTML='<p style="text-align:center;padding:40px;color:var(--muted)">Tidak ada pengguna</p>'; return; }
     let rows = '';
-    users.forEach(function(u) {
+    users.forEach(function(u, idx) {
       const isMe     = u.uid===S.user?.uid || u.id===S.user?.id;
       const locked   = u.locked === true;
       const attempts = u.failedAttempts || 0;
       const lastLogin= u.lastLogin ? fmt.dt(u.lastLogin) : '–';
-      const nama_esc = (u.nama||'').replace(/'/g,"\'");
+      // Simpan index di data-attr, aman dari masalah escaping
+      const di = 'data-uid="' + (u.id||u.uid) + '"';
       rows += '<tr>'
         + '<td style="font-weight:500">' + u.nama + (isMe?' <span class="bdg bdg-b" style="font-size:10px">Anda</span>':'') + '</td>'
         + '<td style="font-size:12.5px;color:var(--muted);font-family:monospace">' + (u.username||'–') + '</td>'
         + '<td><span class="bdg bdg-p">' + roleLabel(u.role) + '</span></td>'
         + '<td>'
-          + (u.active===false
-              ? '<span class="bdg bdg-r">Nonaktif</span>'
-              : locked
-                ? '<span class="bdg bdg-r">🔒 Terkunci</span>'
-                : '<span class="bdg bdg-g">Aktif</span>')
+          + (u.active===false ? '<span class="bdg bdg-r">Nonaktif</span>'
+              : locked ? '<span class="bdg bdg-r">🔒 Terkunci</span>'
+              : '<span class="bdg bdg-g">Aktif</span>')
         + '</td>'
         + '<td style="font-size:11px">'
-          + (locked
-              ? '<span style="color:var(--danger)">Terkunci</span>'
-              : attempts > 0
-                ? '<span style="color:var(--warn)">Gagal: '+attempts+'x</span>'
-                : '<span style="color:var(--muted)">Login: '+lastLogin+'</span>')
+          + (locked ? '<span style="color:var(--danger)">Terkunci ('+attempts+'x gagal)</span>'
+              : attempts > 0 ? '<span style="color:var(--warn)">Gagal: '+attempts+'x</span>'
+              : '<span style="color:var(--muted)">Login: '+lastLogin+'</span>')
         + '</td>'
         + '<td style="font-size:11.5px">' + fmt.date(u.createdAt) + '</td>'
         + '<td>'
           + (!isMe
             ? '<div style="display:flex;gap:4px;flex-wrap:wrap">'
-              + '<button class="act-btn act-edit" onclick="editUser(' + JSON.stringify(u.id||u.uid) + ')">Edit</button>'
-              + (locked ? '<button class="abt" style="background:#FEF9C3;color:#92400E;border-color:#FDE68A;font-size:11px" onclick="unlockUser(' + JSON.stringify(u.id||u.uid) + ',' + JSON.stringify(u.nama) + ')">🔓 Buka</button>' : '')
-              + '<button class="act-btn act-del" onclick="delUser(' + JSON.stringify(u.id||u.uid) + ',' + JSON.stringify(u.nama) + ')">Hapus</button>'
+              + '<button class="act-btn act-edit" ' + di + ' onclick="editUserByEl(this)">Edit</button>'
+              + (locked ? '<button class="abt" style="background:#FEF9C3;color:#92400E;border-color:#FDE68A;font-size:11px" ' + di + ' onclick="unlockUserByEl(this)">🔓 Buka</button>' : '')
+              + '<button class="act-btn act-del" ' + di + ' onclick="delUserByEl(this)">Hapus</button>'
               + '</div>'
             : '–')
         + '</td>'
@@ -2702,10 +2702,37 @@ async function loadUsers() {
   } catch(e) { el.innerHTML = '<p style="color:var(--danger)">Error: '+e.message+'</p>'; }
 }
 
+// Ambil uid dari data-attr, cari user dari cache
+function getUserFromEl(el) {
+  const uid = el.getAttribute('data-uid');
+  return _usersCache.find(function(u){ return (u.id||u.uid) === uid; });
+}
+
+async function editUserByEl(el) {
+  const u = getUserFromEl(el);
+  if (!u) { toast('Data tidak ditemukan','err'); return; }
+  go('form-pengguna', {udata: u});
+}
+
+function unlockUserByEl(el) {
+  const u = getUserFromEl(el);
+  if (!u) { toast('Data tidak ditemukan','err'); return; }
+  unlockUser(u.id||u.uid, u.nama);
+}
+
+function delUserByEl(el) {
+  const u = getUserFromEl(el);
+  if (!u) { toast('Data tidak ditemukan','err'); return; }
+  delUser(u.id||u.uid, u.nama);
+}
+
 
 async function editUser(id) {
-  const d = await db.collection('users').doc(id).get();
-  if (d.exists) go('form-pengguna', {udata:{id:d.id, uid:d.id, ...d.data()}});
+  try {
+    const d = await db.collection('users').doc(id).get();
+    if (d.exists) go('form-pengguna', {udata:{id:d.id, uid:d.id, ...d.data()}});
+    else toast('Data pengguna tidak ditemukan','err');
+  } catch(e) { toast('Gagal: '+e.message,'err'); }
 }
 
 function delUser(id, nama) {
