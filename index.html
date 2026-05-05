@@ -2,8 +2,16 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>SIMBA – Sistem Inventaris Tempat Ibadah</title>
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1B4332">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SIMBA">
+  <meta name="description" content="Sistem Inventaris Tempat Ibadah">
 
   <!-- Firebase SDK v9 compat -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -217,6 +225,31 @@
     @media print {
       .sidebar, .ph button, .tabs, #filter-bar, .act-btn { display: none !important; }
       .main { margin-left: 0 !important; }
+    }
+
+    /* ── REMINDER POP-UP ── */
+    .reminder-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 8000; display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .reminder-box {
+      background: #fff; border-radius: 16px; padding: 22px;
+      max-width: 460px; width: 100%; max-height: 88vh; overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,.3);
+    }
+    .reminder-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 10px; margin-bottom: 7px;
+    }
+    .reminder-item.overdue { background: #FEF2F2; border: 1px solid #FECACA; }
+    .reminder-item.soon    { background: #FEF3C7; border: 1px solid #FDE68A; }
+
+    /* ── NOTIF BELL BADGE ── */
+    .notif-badge {
+      position: absolute; top: -4px; right: -4px;
+      background: #DC2626; color: #fff; border-radius: 9px;
+      font-size: 9px; font-weight: 700; padding: 1px 5px; min-width: 16px;
+      text-align: center; pointer-events: none;
     }
 
     /* ── LABEL OVERLAY ── */
@@ -1504,7 +1537,17 @@ function tplNotifikasi() {
     </div>`;
 
   return `
-  <div class="ph"><div><h1 class="ff">Notifikasi Perawatan</h1><p>Monitor jadwal perawatan semua barang</p></div></div>
+  <div class="ph">
+    <div><h1 class="ff">Notifikasi Perawatan</h1><p>Monitor jadwal perawatan semua barang</p></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-primary" onclick="checkNotifPermission()" id="notif-perm-btn" style="font-size:12.5px;padding:7px 13px">
+        ${('Notification' in window && Notification.permission==='granted')
+          ? '🔔 Notifikasi Aktif'
+          : '🔕 Aktifkan Notifikasi HP'}
+      </button>
+    </div>
+  </div>
+  <div id="notif-perm-info" style="margin-bottom:12px"></div>
   ${!rawatItems.length?'<div class="card" style="text-align:center;padding:40px"><p style="color:var(--muted)">Tidak ada barang dengan jadwal perawatan.</p></div>':''}
   ${overdue.length?`<div class="card" style="margin-bottom:14px;border-color:#FECACA">
     <div style="font-size:13px;font-weight:700;color:var(--danger);margin-bottom:10px">🔴 Terlambat (${overdue.length})</div>
@@ -1957,7 +2000,7 @@ function bindSetup() {}
 function bindPage() {
   hitungNotif();
   switch(S.page) {
-    case 'dashboard':    loadDashboard(); break;
+    case 'dashboard':    loadDashboard(); break;  // notif diinisialisasi di loadDashboard
     case 'barang':       loadItems(); break;
     case 'riwayat':      loadHistory(); break;
     case 'laporan':      loadLaporan(S.lapTab); break;
@@ -2165,6 +2208,11 @@ async function loadDashboard() {
     hitungNotif();
     renderDashboardStats(_items);
     renderDashboardAttn(_items);
+    // Inisialisasi notifikasi (hanya sekali per sesi)
+    if (!window._notifInitialized) {
+      window._notifInitialized = true;
+      initNotifications(_items);
+    }
   }, e => {
     console.warn('items snapshot:', e.code);
     const st = document.getElementById('stats');
@@ -3188,6 +3236,236 @@ function printLabel() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  NOTIFIKASI PERAWATAN — Pop-up + Browser Push
+// ═══════════════════════════════════════════════════════════════
+
+// Hitung item yang perlu perhatian
+function getMaintenanceAlerts(items) {
+  const today = new Date();
+  return items
+    .filter(function(i){ return i.jadwalPerawatan === 'ada'; })
+    .map(function(i){
+      if (!i.tglRawatTerakhir) return { item:i, status:'unknown', hari:null };
+      const last = new Date(i.tglRawatTerakhir);
+      const next = new Date(last);
+      next.setDate(next.getDate() + parseInt(i.intervalRawat||30));
+      const hari = Math.ceil((next - today) / (1000*60*60*24));
+      return { item:i, status: hari<0?'overdue':hari<=7?'soon':'ok', hari:hari, tglNext:next };
+    })
+    .filter(function(a){ return a.status==='overdue' || a.status==='soon'; })
+    .sort(function(a,b){ return (a.hari||0)-(b.hari||0); });
+}
+
+// Tampilkan pop-up reminder
+function showReminderPopup(alerts) {
+  if (!alerts.length) return;
+  // Cek apakah sudah ditampilkan hari ini
+  const todayKey = 'simba_reminder_' + new Date().toISOString().slice(0,10);
+  if (sessionStorage.getItem(todayKey)) return;
+  sessionStorage.setItem(todayKey, '1');
+
+  const overdue = alerts.filter(function(a){ return a.status==='overdue'; });
+  const soon    = alerts.filter(function(a){ return a.status==='soon'; });
+
+  const ov = document.createElement('div');
+  ov.className = 'reminder-overlay';
+  ov.id = 'reminder-ov';
+
+  const itemsHtml = alerts.slice(0,8).map(function(a){
+    const cls  = a.status==='overdue' ? 'overdue' : 'soon';
+    const ic   = a.status==='overdue' ? '🚨' : '⚠️';
+    const info = a.status==='overdue'
+      ? 'Terlambat ' + Math.abs(a.hari) + ' hari!'
+      : a.hari + ' hari lagi (' + a.tglNext.toLocaleDateString('id-ID',{day:'2-digit',month:'short'}) + ')';
+    return '<div class="reminder-item ' + cls + '">'
+      + '<span style="font-size:22px">' + ic + '</span>'
+      + '<div style="flex:1">'
+        + '<div style="font-weight:600;font-size:13.5px">' + a.item.nama + '</div>'
+        + '<div style="font-size:11.5px;color:var(--muted)">'
+          + (a.item.lokasi||'–') + ' &nbsp;&middot;&nbsp; ' + info
+        + '</div>'
+      + '</div>'
+      + '<button onclick="closeAndGo(&quot;notifikasi&quot;)" style="font-size:11px;padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:#fff;cursor:pointer">Detail</button>'
+    + '</div>';
+  }).join('');
+
+  const moreText = alerts.length > 8
+    ? '<p style="text-align:center;font-size:12px;color:var(--muted);margin-top:6px">+' + (alerts.length-8) + ' item lainnya</p>'
+    : '';
+
+  ov.innerHTML = '<div class="reminder-box">'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
+      + '<div style="font-size:30px">🔔</div>'
+      + '<div style="flex:1">'
+        + '<div style="font-size:16px;font-weight:700;color:var(--primary)">Pengingat Perawatan</div>'
+        + '<div style="font-size:12px;color:var(--muted)">'
+          + (overdue.length ? overdue.length+' item terlambat' : '')
+          + (overdue.length && soon.length ? ' &nbsp;&middot;&nbsp; ' : '')
+          + (soon.length ? soon.length+' item segera' : '')
+        + '</div>'
+      + '</div>'
+    + '</div>'
+    + itemsHtml + moreText
+    + '<div style="display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
+      + '<button class="btn btn-primary" style="flex:1" onclick="closeAndGo(&quot;notifikasi&quot;)">📋 Lihat Semua</button>'
+      + '<button class="btn btn-ghost" onclick="closeReminder()">Tutup</button>'
+      + '<button class="btn btn-ghost" style="font-size:11.5px" onclick="snoozeReminder()">Jangan ingatkan hari ini</button>'
+    + '</div>'
+  + '</div>';
+
+  document.body.appendChild(ov);
+}
+
+function closeReminder() {
+  const ov = document.getElementById('reminder-ov');
+  if (ov) ov.remove();
+}
+function closeAndGo(page) {
+  closeReminder();
+  go(page);
+}
+
+async function checkNotifPermission() {
+  if (!('Notification' in window)) {
+    toast('Browser ini tidak mendukung notifikasi', 'err');
+    return;
+  }
+  const info = document.getElementById('notif-perm-info');
+  const btn  = document.getElementById('notif-perm-btn');
+  if (Notification.permission === 'granted') {
+    // Sudah aktif — kirim test notifikasi
+    sendBrowserNotif('🔔 Notifikasi SIMBA Aktif', 'Anda akan menerima pengingat perawatan barang', 'simba-test');
+    toast('Notifikasi sudah aktif! Test notifikasi dikirim.', 'inf');
+    if (info) info.innerHTML = '<div style="padding:10px 14px;background:#F0FDF4;border:1px solid #86EFAC;border-radius:10px;font-size:13px;color:#166534">✅ Notifikasi browser <strong>aktif</strong>. Anda akan mendapat pengingat perawatan secara otomatis.</div>';
+  } else if (Notification.permission === 'denied') {
+    if (info) info.innerHTML = '<div style="padding:10px 14px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;font-size:13px;color:var(--danger)">❌ Notifikasi <strong>diblokir</strong> oleh browser. Buka <strong>Pengaturan browser → Izin situs → Notifikasi</strong> dan izinkan SIMBA.</div>';
+    toast('Notifikasi diblokir. Aktifkan di pengaturan browser.', 'err');
+  } else {
+    const granted = await requestNotifPermission();
+    if (granted) {
+      if (btn) btn.textContent = '🔔 Notifikasi Aktif';
+      if (info) info.innerHTML = '<div style="padding:10px 14px;background:#F0FDF4;border:1px solid #86EFAC;border-radius:10px;font-size:13px;color:#166534">✅ Notifikasi berhasil diaktifkan! Anda akan mendapat pengingat perawatan otomatis.</div>';
+      toast('✓ Notifikasi berhasil diaktifkan!');
+      // Kirim notifikasi sekarang jika ada yang perlu
+      const alerts = getMaintenanceAlerts(_items);
+      if (alerts.length) sendMaintenanceNotifs(alerts);
+    } else {
+      toast('Izin notifikasi ditolak', 'err');
+    }
+  }
+}
+function snoozeReminder() {
+  const todayKey = 'simba_reminder_' + new Date().toISOString().slice(0,10);
+  sessionStorage.setItem(todayKey, 'snoozed');
+  closeReminder();
+  toast('Pengingat tidak akan muncul lagi hari ini', 'inf');
+}
+
+// ── Browser Push Notification ─────────────────────────────────
+let _notifPermission = 'default';
+
+async function requestNotifPermission() {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') { _notifPermission='granted'; return true; }
+  if (Notification.permission === 'denied')  { _notifPermission='denied'; return false; }
+  const result = await Notification.requestPermission();
+  _notifPermission = result;
+  return result === 'granted';
+}
+
+function sendBrowserNotif(title, body, tag) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const n = new Notification(title, {
+    body: body,
+    icon: '/icon-192.png',
+    badge: '/icon-72.png',
+    tag: tag || 'simba-notif',
+    renotify: false,
+  });
+  n.onclick = function() { window.focus(); go('notifikasi'); n.close(); };
+}
+
+// Kirim notifikasi browser untuk tiap item overdue/soon
+function sendMaintenanceNotifs(alerts) {
+  if (!alerts.length || Notification.permission !== 'granted') return;
+  const overdue = alerts.filter(function(a){ return a.status==='overdue'; });
+  const soon    = alerts.filter(function(a){ return a.status==='soon'; });
+
+  if (overdue.length) {
+    sendBrowserNotif(
+      '🚨 ' + overdue.length + ' Perawatan Terlambat!',
+      overdue.slice(0,3).map(function(a){ return a.item.nama; }).join(', ')
+        + (overdue.length>3 ? ' dan '+(overdue.length-3)+' lainnya' : ''),
+      'simba-overdue'
+    );
+  } else if (soon.length) {
+    sendBrowserNotif(
+      '⚠️ ' + soon.length + ' Perawatan Segera Jatuh Tempo',
+      soon.slice(0,3).map(function(a){ return a.item.nama+' ('+a.hari+' hari)'; }).join(', '),
+      'simba-soon'
+    );
+  }
+}
+
+// Cek notifikasi secara berkala (setiap 1 jam)
+let _notifInterval = null;
+function startNotifCheck() {
+  if (_notifInterval) clearInterval(_notifInterval);
+  // Cek langsung sekali
+  checkAndNotify();
+  // Lalu setiap 1 jam
+  _notifInterval = setInterval(checkAndNotify, 60 * 60 * 1000);
+}
+
+async function checkAndNotify() {
+  try {
+    const items  = _items.length ? _items : await dbItems();
+    const alerts = getMaintenanceAlerts(items);
+    S._notifCount = alerts.length;
+    // Update badge di sidebar jika ada
+    const badge = document.getElementById('notif-count-badge');
+    if (badge) badge.textContent = alerts.length > 0 ? alerts.length : '';
+    sendMaintenanceNotifs(alerts);
+  } catch(e) { console.warn('notif check:', e.message); }
+}
+
+// ── Minta izin notifikasi + tampilkan popup ───────────────────
+async function initNotifications(items) {
+  const alerts = getMaintenanceAlerts(items);
+  S._notifCount = alerts.length;
+
+  // Tampilkan pop-up in-app
+  if (alerts.length > 0) {
+    setTimeout(function(){ showReminderPopup(alerts); }, 1500);
+  }
+
+  // Minta izin browser notification
+  if ('Notification' in window && Notification.permission === 'default') {
+    // Tunda sedikit agar user sudah melihat dashboard dulu
+    setTimeout(async function(){
+      const granted = await requestNotifPermission();
+      if (granted && alerts.length) {
+        sendMaintenanceNotifs(alerts);
+      }
+    }, 3000);
+  } else if (Notification.permission === 'granted' && alerts.length) {
+    sendMaintenanceNotifs(alerts);
+  }
+
+  // Mulai pengecekan berkala
+  startNotifCheck();
+}
+
+// ── Service Worker Registration (PWA) ────────────────────────
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    console.log('SW registered:', reg.scope);
+  } catch(e) { console.warn('SW registration failed:', e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  INIT APP – session-based (tanpa Firebase Auth)
 // ═══════════════════════════════════════════════════════════════
 async function initApp() {
@@ -3204,6 +3482,9 @@ async function initApp() {
     JENIS_LIST  = S._masterJenis;
     LOKASI_LIST = S._masterLokasi;
   } catch(e) { console.warn('master data:', e.message); }
+
+  // Register Service Worker untuk PWA
+  registerServiceWorker();
 
   const sess = loadSession();
   if (sess && (sess.id || sess.uid)) {

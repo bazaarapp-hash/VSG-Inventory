@@ -1,0 +1,48 @@
+{
+  "name": "SIMBA – Sistem Inventaris Ibadah",
+  "short_name": "SIMBA",
+  "description": "Sistem Inventaris Tempat Ibadah",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#1B4332",
+  "background_color": "#F5F0E8",
+  "lang": "id",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='24' fill='%231B4332'/><text x='96' y='130' font-size='110' text-anchor='middle'>🕌</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='64' fill='%231B4332'/><text x='256' y='340' font-size='280' text-anchor='middle'>🕌</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Data Barang",
+      "short_name": "Barang",
+      "url": "/?page=barang",
+      "description": "Lihat dan kelola data barang"
+    },
+    {
+      "name": "Peminjaman",
+      "short_name": "Pinjam",
+      "url": "/?page=peminjaman",
+      "description": "Kelola peminjaman barang"
+    },
+    {
+      "name": "Notifikasi",
+      "short_name": "Notif",
+      "url": "/?page=notifikasi",
+      "description": "Cek jadwal perawatan"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}
